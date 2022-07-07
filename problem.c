@@ -2,27 +2,37 @@
 
 #include <stdlib.h>
 
-problem_t* readProblemFromFile(FILE* file)
+problem_t* mallocProblem(int nVars, int nConstraints)
 {
     problem_t* problem = (problem_t*)malloc(sizeof(problem_t));
+    
+    problem->constraints = nConstraints;
+    problem->vars = nVars;
+    
+    problem->objectiveFunction = (TYPE*)malloc(BYTE_SIZE(nVars));
+    problem->constraintsMatrix = (TYPE*)malloc(BYTE_SIZE(nVars * nConstraints));
+    problem->knownTermsVector = (TYPE*)malloc(BYTE_SIZE(nConstraints));
+
+    return problem;
+}
+
+problem_t* readProblemFromFile(FILE* file)
+{
     int nVars = 0;
     int nConstraints = 0;
 
     //Leggo il numero di variabili e vincoli del problema dalla prima riga del file
 	fscanf_s(file, "%d %d", &nVars, &nConstraints);
-    problem->constraints = nConstraints;
-    problem->vars = nVars;
+
+    problem_t* problem = mallocProblem(nVars, nConstraints);
 
     //Leggo il vettore dei costi dalla seconda riga del file
-    problem->objectiveFunction = (TYPE*)malloc(BYTE_SIZE(nVars));
     for (size_t i = 0; i < nVars; i++)
     {
         fscanf_s(file, "%lf", &problem->objectiveFunction[i]);
     }
 
     //Leggo la matrice delle costanti e il vettore dei termini noti
-    problem->constraintsMatrix = (TYPE*)malloc(BYTE_SIZE(nVars * nConstraints));
-    problem->knownTermsVector = (TYPE*)malloc(BYTE_SIZE(nConstraints));
     for (size_t i = 0; i < nConstraints; i++)
     {
         for (size_t j = 0; j < nVars; j++)
@@ -31,6 +41,20 @@ problem_t* readProblemFromFile(FILE* file)
         }
         fscanf_s(file, "%lf\n", &problem->knownTermsVector[i]);
     }
+
+    return problem;
+}
+
+problem_t* generateRandomProblem(int width, int height)
+{
+    problem_t* problem = mallocProblem(width, height);
+
+    /*L'idea è quella di generare i tre vettori utilizzando 
+    tre stream e poi trasferire la matrice creata in memoria
+    (per una questione di uniformità)
+
+    P.S. Generare un vettore random da CUDA è una cagata
+    */
 
     return problem;
 }
