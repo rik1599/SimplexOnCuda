@@ -53,7 +53,7 @@ problem_t* generateRandomProblem(int width, int height)
     tre stream e poi trasferire la matrice creata in memoria
     (per una questione di uniformità)
 
-    P.S. Generare un vettore random da CUDA è una cagata
+    P.S. Consiglio di fare queste operazioni in un file .cu a parte
     */
 
     return problem;

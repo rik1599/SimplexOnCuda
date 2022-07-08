@@ -1,5 +1,5 @@
-nvcc -rdc=true ^
+nvcc -rdc=true -o SimplexOnCuda ^
  main.c ^
  error.cu ^
  problem.c ^
--o SimplexOnCuda
+ tabular.cu
