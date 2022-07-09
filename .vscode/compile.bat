@@ -1,4 +1,4 @@
-nvcc -rdc=true -o SimplexOnCuda ^
+nvcc -rdc=true -o Debug/SimplexOnCuda ^
  main.c ^
  error.cu ^
  problem.c ^

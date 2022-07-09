@@ -59,7 +59,7 @@ void print(FILE* Stream, tabular_t* tabular)
     fprintf(Stream, "Base: ");
     for (size_t i = 1; i < tabular->rows; i++)
     {
-        fprintf(Stream, "%.2lf\t", tabular->base[i]);
+        fprintf(Stream, "%d\t", tabular->base[i]);
     }
     fprintf(Stream, "\n--------------------------------------\n");
 }
