@@ -1,6 +1,18 @@
 #include "tabular.cuh"
 #include "error.cuh"
 
+/**
+ * Allocazione spazio in memoria globale
+ * Dati m il numero di vincoli e n il numero di variabili
+ * 1) Allocazione matrice di dimensioni (m+1)*(n+2m) (cudaMallocPitch)
+ * 2) Allocazione vettore obiettivo di dimensione n
+ * 3) Allocazione vettore indicatori di dimensione m+1
+ */
+void allocateGlobalMemory(tabular_t* tabular)
+{
+
+}
+
 tabular_t* newTabular(problem_t* problem)
 {
     tabular_t* tabular = (tabular_t*)malloc(sizeof(tabular_t));
@@ -12,14 +24,9 @@ tabular_t* newTabular(problem_t* problem)
     HANDLE_ERROR(cudaHostRegister(problem->objectiveFunction, BYTE_SIZE(problem->vars), cudaHostRegisterDefault));
 
     tabular->rows = problem->constraints + 1;
-    tabular->pitch = 0;
-    tabular->cols = 0;
-    tabular->table = NULL;
-    tabular->indicatorCol = NULL;
-    tabular->r0 = NULL;
+    tabular->cols = problem->constraints + 2 * problem->vars;
 
-    tabular->base = (int*)malloc(BYTE_SIZE(tabular->rows));
-    memset(tabular->base, 0, BYTE_SIZE(tabular->rows));
+    allocateGlobalMemory(tabular);
 
     return tabular;
 }
@@ -57,11 +64,6 @@ void print(FILE* Stream, tabular_t* tabular)
     }
     fprintf(Stream, "\n--------------------------------------\n");
     fprintf(Stream, "Base: ");
-    for (size_t i = 1; i < tabular->rows; i++)
-    {
-        fprintf(Stream, "%d\t", tabular->base[i]);
-    }
-    fprintf(Stream, "\n--------------------------------------\n");
 }
 
 void printTableauToStream(FILE* Stream, tabular_t* tabular)
@@ -82,9 +84,7 @@ void freeTabular(tabular_t* tabular)
     {
         HANDLE_ERROR(cudaFree(tabular->table));
         HANDLE_ERROR(cudaFree(tabular->indicatorCol));
-        HANDLE_ERROR(cudaFree(tabular->r0));
     }
 
-    free(tabular->base);
     free(tabular);
 }

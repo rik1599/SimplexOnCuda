@@ -1,5 +1,6 @@
 nvcc -rdc=true -o Debug/SimplexOnCuda ^
- main.c ^
+ main.cu ^
  error.cu ^
  problem.c ^
- tabular.cu
+ tabular.cu ^
+ solver.cu

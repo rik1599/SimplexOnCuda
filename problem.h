@@ -1,10 +1,7 @@
 #pragma once
 
 #include <stdio.h>
-
-#define TYPE double
-#define TYPE_SIZE sizeof(TYPE)
-#define BYTE_SIZE(count) count * TYPE_SIZE
+#include "macro.h"
 
 /** Struttura per memorizzare i problemi letti da file (o generati in automatico).
  *  Si assumono che i problemi siano tutti nella forma

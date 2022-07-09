@@ -2,10 +2,6 @@
 
 #include "problem.h"
 
-#define TILE_DIM 32
-#define GRID_DIM(size) size < TILE_DIM ? 1 : size/TILE_DIM
-#define TAB_ELEMENT(vet, row, col, pitch) (TYPE*) ((char*) vet + row * pitch) + col
-
 typedef struct tabular
 {
     // Riferimento al problema iniziale
@@ -24,14 +20,8 @@ typedef struct tabular
     //Numero di colonne di table
     int cols;
 
-    //Valori della prima riga per la fase 2 (coefficienti della funzione obiettivo)
-    TYPE* r0;
-
     //Ultima colonna di table (vettore dei termini noti)
     TYPE* indicatorCol;
-
-    //Base della soluzione
-    int* base;
 
 } tabular_t;
 

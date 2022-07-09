@@ -16,16 +16,31 @@
             }
         },
         {
-            "label": "run",
+            "label": "memcheck",
             "type": "shell",
-            "command": "${workspaceFolder}\\Debug\\SimplexOnCuda.exe",
+            "command": "cuda-memcheck",
             "args": [
+                "${workspaceFolder}\\Debug\\SimplexOnCuda.exe",
                 "${workspaceFolder}\\Debug\\smallProblem.txt"
             ],
             "problemMatcher": [],
             "group": {
                 "kind": "test",
                 "isDefault": true
+            }
+        },
+        {
+            "label": "profile",
+            "type": "shell",
+            "command": "nvprof",
+            "args": [
+                "${workspaceFolder}\\Debug\\SimplexOnCuda.exe",
+                "${workspaceFolder}\\Debug\\smallProblem.txt"
+            ],
+            "problemMatcher": [],
+            "group": {
+                "kind": "test",
+                "isDefault": false
             }
         }
     ]
