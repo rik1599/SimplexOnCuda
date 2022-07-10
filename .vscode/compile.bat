@@ -3,4 +3,6 @@ nvcc -rdc=true -o Debug/SimplexOnCuda ^
  error.cu ^
  problem.c ^
  tabular.cu ^
- solver.cu
+ solver.cu ^
+ twoPhaseMethod.cu ^
+ generator.cu
