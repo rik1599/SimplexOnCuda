@@ -5,7 +5,6 @@
  * Allocazione spazio in memoria globale
  * Dati m il numero di vincoli e n il numero di variabili
  * 1) Allocazione matrice di dimensioni (m+1)*(n+2m) (cudaMallocPitch)
- * 2) Allocazione vettore obiettivo di dimensione n
  * 3) Allocazione vettore indicatori di dimensione m+1
  */
 void allocateGlobalMemory(tabular_t* tabular)
