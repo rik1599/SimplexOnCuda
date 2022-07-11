@@ -9,20 +9,17 @@
  */
 void allocateGlobalMemory(tabular_t* tabular)
 {
-    //temporanee
-    size_t* pitch;
-    void** devPtrTable;
-    TYPE* devPtrObjective;
-    TYPE* devPtrIndicatorCol;
+    HANDLE_ERROR(cudaMallocPitch(
+        (void**)&tabular->table,
+        &tabular->pitch,
+        BYTE_SIZE(tabular->cols),
+        tabular->rows
+    ));
 
-    //allocazione
-    HANDLE_ERROR(cudaMallocPitch(devPtr, pitch, tabular->rows * sizeOf(TYPE), (tabular->cols) * sizeof(TYPE)));
-    HANDLE_ERROR(cudaMAlloc(devPtrIndicatorCol, (tabular->rows) * sizeof(TYPE)));
-
-    //salvataggio in tabular
-    tabular->table = (TYPE*)devPtrTable;
-    tabular->pitch = pitch;
-    tabular->indicatorCol = devPtrIndicatorCol;
+    HANDLE_ERROR(cudaMalloc(
+        (void**)&tabular->indicatorCol,
+        BYTE_SIZE(tabular->rows)
+    ));
 }
 
 tabular_t* newTabular(problem_t* problem)
