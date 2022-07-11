@@ -1,7 +1,7 @@
 nvcc -rdc=true -o Debug/SimplexOnCuda ^
  main.cu ^
  error.cu ^
- problem.c ^
+ problem.cu ^
  tabular.cu ^
  solver.cu ^
  twoPhaseMethod.cu ^

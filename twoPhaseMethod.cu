@@ -20,7 +20,7 @@
  */
 int phase1(tabular_t* tabular, int* base)
 {
-
+    return FEASIBLE;
 }
 
 /**
@@ -36,7 +36,7 @@ int phase1(tabular_t* tabular, int* base)
  */
 int phase2(tabular_t* tabular, int* base)
 {
-
+    return FEASIBLE;
 }
 
 int twoPhaseMethod(problem_t* problem, TYPE* solution, TYPE* optimalValue)

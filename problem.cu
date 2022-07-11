@@ -51,9 +51,7 @@ problem_t* generateRandomProblem(int width, int height)
 
     /*L'idea è quella di generare i tre vettori utilizzando 
     tre stream e poi trasferire la matrice creata in memoria
-    (per una questione di uniformità)
-
-    P.S. Consiglio di fare queste operazioni in un file .cu a parte
+    (per una questione di uniformità del codice e della procedura di test)
     */
 
     return problem;

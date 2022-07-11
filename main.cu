@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include "problem.h"
-#include "solver.h"
+#include "twoPhaseMethod.h"
 #include "macro.h"
+
+void setupDevice();
 
 int main(int argc, const char* argv[])
 {
@@ -30,7 +32,7 @@ int main(int argc, const char* argv[])
     TYPE* solution = (TYPE*)(malloc(BYTE_SIZE(problem->vars)));
     TYPE optimalValue = 0;
 
-    switch (solve(problem, solution, &optimalValue))
+    switch (twoPhaseMethod(problem, solution, &optimalValue))
     {
     case INFEASIBLE:
         printf("Problem INFEASIBLE!\n");
