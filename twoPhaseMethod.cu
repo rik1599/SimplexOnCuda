@@ -1,6 +1,37 @@
 #include "twoPhaseMethod.h"
 #include "error.cuh"
 
+/** Implementa in parallelo operazioni del tipo
+ * mat[0] = mat[0] - (\sum_{i=i}^{rows-1} coefficient[i]*mat[i])
+ * 
+ * In pratica sottrae al vettore a riga 0 del tableau (valori della funzione obiettivo)
+ * TUTTE le altre righe, ognuna opportunatamente moltiplicata per un coefficiente.
+ * 
+ * L'operazione viene fatta "per tile"
+ * 
+ * Si tratta di una variante dell'esercizio dell'istogramma visto a lezione 
+ */
+__global__ void gaussianElimination(TYPE* mat, TYPE* lastCol, TYPE* coefficients, int rows, int cols)
+{
+
+}
+
+/** Scandisce il vettore della base per creare il vettore dei coefficienti.
+ * 
+ * Sostanzialmente coefficients[i] = firstRow[base[i]]
+ */
+__global__ void createCoefficientVector(TYPE* firstRow, int cols, int* base, int rows, TYPE* coefficients)
+{
+
+}
+
+/** Esprimo la funzione obiettivo in termini delle variabili non di base (vedi es. istogramma)
+ */
+void updateObjectiveFunction(tabular_t* tabular)
+{
+
+}
+
 /**
  * Passaggi per la fase 1 
  * Dati m il numero di vincoli e n il numero di variabili

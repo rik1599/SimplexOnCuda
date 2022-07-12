@@ -21,7 +21,7 @@ typedef struct tabular
     int cols;
 
     //Ultima colonna di table (vettore dei termini noti)
-    TYPE* indicatorCol;
+    TYPE* lastCol;
 
 } tabular_t;
 

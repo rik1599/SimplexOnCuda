@@ -17,7 +17,7 @@ void allocateGlobalMemory(tabular_t* tabular)
     ));
 
     HANDLE_ERROR(cudaMalloc(
-        (void**)&tabular->indicatorCol,
+        (void**)&tabular->lastCol,
         BYTE_SIZE(tabular->rows)
     ));
 }
@@ -57,7 +57,7 @@ void print(FILE* Stream, tabular_t* tabular)
 
     HANDLE_ERROR(cudaMemcpy(
         hIndicators,
-        tabular->indicatorCol,
+        tabular->lastCol,
         tabular->rows,
         cudaMemcpyDeviceToHost
     ));
@@ -92,7 +92,7 @@ void freeTabular(tabular_t* tabular)
     if (tabular->table != NULL)
     {
         HANDLE_ERROR(cudaFree(tabular->table));
-        HANDLE_ERROR(cudaFree(tabular->indicatorCol));
+        HANDLE_ERROR(cudaFree(tabular->lastCol));
     }
 
     free(tabular);
