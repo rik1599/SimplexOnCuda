@@ -1,6 +1,26 @@
 #include "twoPhaseMethod.h"
 #include "error.cuh"
 
+/** Inserisce una matrice di indentità in coda a una matrice
+ * 
+ * @param mat - puntatore alla matrice
+ * @param rows - righe della matrice
+ * @param cols - colonne della matrice
+ * @param startCol - colonna di partenza
+ * @param dim - dimensione dell'identità
+ */
+__global__ void fillMatrix(TYPE* mat, int rows, int cols, int startCol, int dim)
+{
+
+}
+
+/** Inizializza il vettore della base con numeri progressivi da start a start + size - 1
+ */
+__global__ void fillBaseVector(int* base, int size, int start)
+{
+
+}
+
 /** Implementa in parallelo operazioni del tipo
  * mat[0] = mat[0] - (\sum_{i=i}^{rows-1} coefficient[i]*mat[i])
  * 
