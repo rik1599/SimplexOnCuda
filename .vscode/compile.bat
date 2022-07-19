@@ -1,8 +1,9 @@
-nvcc -rdc=true -o Debug/SimplexOnCuda ^
+nvcc -rdc=true -o Debug/SimplexOnCuda -Iinclude/^
  main.cu ^
- error.cu ^
- problem.cu ^
- tabular.cu ^
- solver.cu ^
- twoPhaseMethod.cu ^
- generator.cu
+ src/error.cu ^
+ src/problem.cu ^
+ src/tabular.cu ^
+ src/solver.cu ^
+ src/twoPhaseMethod.cu ^
+ src/generator.cu ^
+ src/reduction.cu
