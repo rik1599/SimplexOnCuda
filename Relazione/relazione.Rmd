@@ -1,0 +1,40 @@
+---
+title: "Esame di Programmazione su Architetture Parallele"
+subtitle: "Metodo del simplesso per la risoluzione della programmazione lineare"
+author:
+  - "Belliato Riccardo\n(mat. 142652)"
+  - "Simone Tomada"
+date: "`r Sys.Date()`"
+abstract: |
+  In questa relazione si propone una implementazione del metodo del simplesso a due fasi 
+  in CUDA per la risoluzione dei problemi di programmazione lineare in forma canonica.
+  
+  Dopo una breve descrizione dell'algoritmo, seguirà la discussione su alcune scelte
+  implementative.
+  
+  Infine verranno valutate performance e scalabilità della soluzione proposta confrontando
+  i tempi di esecuzione dell'algoritmo su istanze a dimensione crescente generate casualmente.
+output:
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduzione al metodo del simplesso
+## Programmazione lineare
+### Problemi risolvibili, non risolvibili, illimitati, degeneri
+## Forma canonica e forma standard
+## Metodo del tableau a due fasi
+
+# Scelte implementative e algoritmi utilizzati
+## Gestione della memoria
+### Estrazione delle colonne dalla matrice
+## Ricerca del pivot e test di ottimalità
+## Eliminazione di Gauss
+## Aggiornamento della tabella
+
+# Risultati sperimentali
+
