@@ -1,5 +1,6 @@
 #include "solver.h"
 #include "twoPhaseMethod.h"
+#include "reduction.cuh"
 
 /** Per i punti 3, 4, 8 lavoro su singole colonne. Per evitare accessi strided copio la colonna in un 
  * vettore in shared memory utilizzando questo metodo:
@@ -8,28 +9,7 @@
  * 3) Ogni thread copia un elemento della matrice in shared memory (matrice 32x33 per evitare bank conflict)
  * 4) I thread con indice y=0, copiano l'elemento della colonna cercata nel vettore in shared memory
  */
-__device__ void copyColumn(TYPE* matrix, int rows, int cols, int colToCpy, volatile TYPE* sVet)
-{
-
-}
-
-/** Ritorna l'INDICE (NON IL VALORE!) dell'elemento minimo di un vettore utilizzando la parallel reduction
- */
-__global__ void minIndex(TYPE* vet, int size, int* minIndex)
-{
-
-}
-
-/** Verifica se tutti i valori della prima riga un vettore sono >= 0
- */
-__global__ void checkOptimality(TYPE* firstRow, int size, bool* result)
-{
-
-}
-
-/** Verifica se tutti i valori di una certa colonna sono <= 0
- */
-__global__ void checkUnbounding(TYPE* mat, int size, int colPivot, bool* result)
+__global__ void copyColumn(TYPE* matrix, int rows, int cols, int colToCpy, volatile TYPE* sVet)
 {
 
 }
