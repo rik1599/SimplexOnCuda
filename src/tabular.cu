@@ -33,7 +33,7 @@ tabular_t* newTabular(problem_t* problem)
     HANDLE_ERROR(cudaHostRegister(problem->objectiveFunction, BYTE_SIZE(problem->vars), cudaHostRegisterDefault));
 
     tabular->rows = problem->constraints + 1;
-    tabular->cols = problem->constraints + 2 * problem->vars;
+    tabular->cols = problem->vars + 2 * problem->constraints;
 
     allocateGlobalMemory(tabular);
 
