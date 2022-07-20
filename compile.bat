@@ -1,4 +1,4 @@
-nvcc -rdc=true -o Debug/SimplexOnCuda -Iinclude/^
+nvcc -rdc=true -o debug/SimplexOnCuda -Iinclude/^
  main.cu ^
  src/error.cu ^
  src/problem.cu ^
