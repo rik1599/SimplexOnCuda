@@ -38,30 +38,41 @@ tabular_t* newTabular(problem_t* problem)
     return tabular;
 }
 
-void print(FILE* Stream, tabular_t* tabular)
+__inline__ void print(FILE* Stream, tabular_t* tabular)
 {
     TYPE* hTable = (TYPE*)malloc(BYTE_SIZE(tabular->rows * tabular->cols));
     TYPE* hIndicators = (TYPE*)malloc(BYTE_SIZE(tabular->cols));
+    TYPE* hCosts = (TYPE*)malloc(BYTE_SIZE(tabular->rows));
 
     HANDLE_ERROR(cudaMemcpy2D(
         hTable,
         BYTE_SIZE(tabular->cols),
-        tabular->table,
+        tabular->constraintsMatrix,
         tabular->pitch,
         BYTE_SIZE(tabular->cols),
-        tabular->rows,
+        tabular->rows - 1,
+        cudaMemcpyDeviceToHost
+    ));
+
+    HANDLE_ERROR(cudaMemcpy2D(
+        hIndicators,
+        BYTE_SIZE(tabular->cols),
+        tabular->indicatorsVector,
+        tabular->pitch,
+        BYTE_SIZE(tabular->cols),
+        1,
         cudaMemcpyDeviceToHost
     ));
 
     HANDLE_ERROR(cudaMemcpy(
-        hIndicators,
+        hCosts,
         tabular->costsVector,
         tabular->rows,
         cudaMemcpyDeviceToHost
     ));
 
     fprintf(Stream, "\n--------------- Tabular --------------\n");
-    for (size_t i = 0; i < tabular->rows; i++)
+    for (size_t i = 0; i < tabular->rows-1; i++)
     {
         for (size_t j = 0; j < tabular->cols; j++)
         {
@@ -70,7 +81,11 @@ void print(FILE* Stream, tabular_t* tabular)
         fprintf(Stream, "%.2lf\n", hIndicators[i]);
     }
     fprintf(Stream, "\n--------------------------------------\n");
-    fprintf(Stream, "Base: ");
+    fprintf(Stream, "Vettore dei costi: ");
+    for (size_t i = 0; i < tabular->rows; i++)
+    {
+        fprintf(Stream, "%.2lf\t", hCosts[i]);
+    }
 }
 
 void printTableauToStream(FILE* Stream, tabular_t* tabular)
