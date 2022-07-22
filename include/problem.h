@@ -7,7 +7,7 @@
  *  Si assumono che i problemi siano tutti nella forma
  *  max cx s.t. Ax <= b
 */
-typedef struct problem
+typedef struct
 {
     //Matrice delle costanti (linearizzata per colonne)
 	TYPE* constraintsMatrix;

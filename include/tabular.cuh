@@ -2,16 +2,21 @@
 
 #include "problem.h"
 
-typedef struct tabular
+typedef struct
 {
     // Riferimento al problema iniziale
     problem_t* problem;
 
-    // Matrice dei vincoli memorizzata in global memory
+    // Tableau memorizzato in global memory (per colonne)
     TYPE* table;
 
-    /** Larghezza "reale" di table (in byte) in global memory.
-     */
+    //Puntatore al vettore degli indicatori in table (vettore-colonna dei termini noti)
+    TYPE* indicatorsVector;
+
+    //Puntatore alla matrice dei vincoli (dalla riga 1 in poi di table)
+    TYPE* constraintsMatrix;
+
+    // Larghezza "reale" di table (in byte) in global memory.
     size_t pitch;
 
     //Numero di righe di table
@@ -20,8 +25,8 @@ typedef struct tabular
     //Numero di colonne di table
     int cols;
 
-    //Ultima colonna di table (vettore dei termini noti)
-    TYPE* lastCol;
+    //Vettore dei costi (coefficienti della funzione obiettivo)
+    TYPE* costsVector;
 
 } tabular_t;
 

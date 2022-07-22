@@ -90,6 +90,14 @@ int phase2(tabular_t* tabular, int* base)
     return FEASIBLE;
 }
 
+__inline__ void unregisterMemory(int* base_h, problem_t* problem)
+{
+    HANDLE_ERROR(cudaHostUnregister(problem->constraintsMatrix));
+    HANDLE_ERROR(cudaHostUnregister(problem->knownTermsVector));
+    HANDLE_ERROR(cudaHostUnregister(problem->objectiveFunction));
+    HANDLE_ERROR(cudaFreeHost(base_h));
+}
+
 int twoPhaseMethod(problem_t* problem, TYPE* solution, TYPE* optimalValue)
 {
     tabular_t* tabular = newTabular(problem);
@@ -100,17 +108,22 @@ int twoPhaseMethod(problem_t* problem, TYPE* solution, TYPE* optimalValue)
     HANDLE_ERROR(cudaHostAlloc(&base_h, tabular->rows * sizeof(int), cudaHostAllocMapped));
     HANDLE_ERROR(cudaHostGetDevicePointer(&base_map, base_h, 0));
 
+    //Registro i vettori del problema come memoria page-locked (per poter utilizzare i trasferimenti paralleli con gli stream)
+    HANDLE_ERROR(cudaHostRegister(problem->constraintsMatrix, BYTE_SIZE(problem->vars * problem->constraints), cudaHostRegisterDefault));
+    HANDLE_ERROR(cudaHostRegister(problem->knownTermsVector, BYTE_SIZE(problem->constraints), cudaHostRegisterDefault));
+    HANDLE_ERROR(cudaHostRegister(problem->objectiveFunction, BYTE_SIZE(problem->vars), cudaHostRegisterDefault));
+
     int result = phase1(tabular, base_map);
     if (result != FEASIBLE)
     {
-        cudaFreeHost(base_h);
+        unregisterMemory(base_h, problem);
         return result;
     }
     
     result = phase2(tabular, base_map);
     if (result != FEASIBLE)
     {
-        cudaFreeHost(base_h);
+        unregisterMemory(base_h, problem);
         return result;
     }
     
@@ -120,6 +133,6 @@ int twoPhaseMethod(problem_t* problem, TYPE* solution, TYPE* optimalValue)
     2) Per ogni variabile di base: solution[base[i]] = tabular->indicatorCol[i], il resto è 0
     */
 
-    cudaFreeHost(base_h);
+    unregisterMemory(base_h, problem);
     return result;
 }
