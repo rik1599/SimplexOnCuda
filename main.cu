@@ -27,36 +27,36 @@ int main(int argc, const char* argv[])
     printProblemToStream(stdout, problem);
     #endif
 
-    setupDevice();
+    // setupDevice();
     
-    TYPE* solution = (TYPE*)(malloc(BYTE_SIZE(problem->vars)));
-    TYPE optimalValue = 0;
+    // TYPE* solution = (TYPE*)(malloc(BYTE_SIZE(problem->vars)));
+    // TYPE optimalValue = 0;
 
-    switch (twoPhaseMethod(problem, solution, &optimalValue))
-    {
-    case INFEASIBLE:
-        printf("Problem INFEASIBLE!\n");
-        break;
+    // switch (twoPhaseMethod(problem, solution, &optimalValue))
+    // {
+    // case INFEASIBLE:
+    //     printf("Problem INFEASIBLE!\n");
+    //     break;
     
-    case UNBOUNDED:
-        printf("Problem UNBOUNDED!\n");
-        break;
+    // case UNBOUNDED:
+    //     printf("Problem UNBOUNDED!\n");
+    //     break;
     
-    case DEGENERATE:
-        printf("Problem DEGENERATE!\n");
-        break;
+    // case DEGENERATE:
+    //     printf("Problem DEGENERATE!\n");
+    //     break;
 
-    default:
-        printf("Problem solved!\nVariables values: ");
-        for (size_t i = 0; i < problem->vars; i++)
-        {
-            printf("%lf\t", solution[i]);
-        }
-        printf("\nOptimal value: %lf\n", optimalValue);
-        break;
-    }
+    // default:
+    //     printf("Problem solved!\nVariables values: ");
+    //     for (size_t i = 0; i < problem->vars; i++)
+    //     {
+    //         printf("%lf\t", solution[i]);
+    //     }
+    //     printf("\nOptimal value: %lf\n", optimalValue);
+    //     break;
+    // }
 
-    free(solution);
+    // free(solution);
     freeProblem(problem);
 }
 

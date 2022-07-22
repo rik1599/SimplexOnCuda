@@ -37,7 +37,7 @@ problem_t* readProblemFromFile(FILE* file)
     {
         for (size_t j = 0; j < nVars; j++)
         {
-            fscanf_s(file, "%lf", &problem->constraintsMatrix[i * nVars + j]);
+            fscanf_s(file, "%lf", &problem->constraintsMatrix[j * nConstraints + i]);
         }
         fscanf_s(file, "%lf\n", &problem->knownTermsVector[i]);
     }
@@ -72,11 +72,11 @@ void printProblemToStream(FILE* Stream, problem_t* problem)
 
     for (size_t i = 0; i < nConstraints; i++)
     {
-        for (size_t j = 0; j < nVars; j++)
+        for (size_t j = 0; j < nVars - 1; j++)
         {
-            fprintf(Stream, "%.2lf * x%zd + ", problem->constraintsMatrix[i * nVars + j], j + 1);
+            fprintf(Stream, "%.2lf * x%zd + ", problem->constraintsMatrix[j * nConstraints + i], j + 1);
         }
-        fprintf(Stream, "%.2lf * x%d ", problem->constraintsMatrix[i * nVars + (nVars-1)], nVars);
+        fprintf(Stream, "%.2lf * x%d ", problem->constraintsMatrix[(nVars - 1) * nConstraints + i], nVars);
 		fprintf(Stream, "<= %.2lf\n", problem->knownTermsVector[i]);
     }
     

@@ -9,7 +9,7 @@
 */
 typedef struct problem
 {
-    //Matrice delle costanti (linearizzata per righe)
+    //Matrice delle costanti (linearizzata per colonne)
 	TYPE* constraintsMatrix;
 
     //Vettore dei termini noti
