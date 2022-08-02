@@ -13,6 +13,9 @@ int main(int argc, const char* argv[])
         exit(-1);
     }
 
+    problem_t* problem = generateRandomProblem(file);
+ 
+    /*
     FILE* file;
     if (fopen_s(&file, argv[1], "r") != 0)
     {
@@ -22,6 +25,7 @@ int main(int argc, const char* argv[])
 
     problem_t* problem = readProblemFromFile(file);
     fclose(file);
+    */
 
     #ifdef DEBUG
     printProblemToStream(stdout, problem);
@@ -75,3 +79,4 @@ void setupDevice()
     }
     cudaSetDeviceFlags(cudaDeviceMapHost);
 }
+
