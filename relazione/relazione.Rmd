@@ -24,10 +24,66 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # Introduzione al metodo del simplesso
-## Programmazione lineare
-### Problemi risolvibili, non risolvibili, illimitati, degeneri
+## Problemi di ottimizzazione lineare
+Nell'ambito della Ricerca Operativa (Operations Research) uno dei principali argomenti è la cosiddetta
+**ottimizzazione lineare**, ossia lo studio di una classe di problemi del tipo:
+$$ 
+ \min/\max c^T x \\
+ \text{subject to} \\
+ Ax \lesseqgtr b
+$$
+
+con $x \in \mathbb{R}^n$, $c \in \mathbb{R}^n$, $A \in \mathbb{R}^{m \times n}$, $b \in \mathbb{R}^{1\times m}$.
+
+In altre parole, si vogliono trovare dei valori per le componenti del vettore $x$ tali da massimizzare (o minimizzare) il valore di una *funzione lineare* (detta **funzione obiettivo**, mentre il vettore $c$ è chiamato **vettore dei costi**), dati una serie di vincoli espressi nel sistema di disequazioni lineari $Ax \lesseqgtr b$ (dove $A$ è detta **matrice dei vincoli** e $b$ **vettore dei termini noti**).
+
+Questa classe di problemi permette di modellare un gran numero di situazioni reali in molteplici ambiti (ottimizzazione dei costi, creazione di orari, *etc.*), oltre che alcuni problemi NP-hard come il *Knapsack* o il *Vertex Cover*.
+
+Dal punto di vista dell'algebra lineare, un problema in $n$ varibili non è altro che uno spazio $\mathbb{R}^n$, la funzione obiettivo è una retta nello spazio, mentre i vincoli definiscono un *poliedro* nello spazio.
+
+Utilizzando i teoremi e le tecniche dell'algebra lineare è stato possibile creare degli algoritmi per risolvere i problemi di ottimizzazione, come il
+**simplesso**, i quali si prestano molto bene ad essere parallelizzati (in quanto operano su matrici).
+
+### Problemi risolvibili, non risolvibili, illimitati
+Dato un problema di ottimizzazione, questo può essere di tre tipi:
+
+- avere una o più soluzioni ammissibili (*feasible*): ossia esistono uno o più vettori che moltiplicati per il vettore dei costi assegnano alla funzione obiettivo il valore massimo (o minimo possibile) e tutti i vincoli sono veri,
+
+- non risolvibili (*infeasible*): se non esistono soluzioni
+
+- illimitati (*unbounded*): se per una o più componenti della soluzione è possibile aumentarne (o ridurne) il valore all'infinito senza mai violare i vincoli
+
 ## Forma canonica e forma standard
-## Metodo del tableau a due fasi
+I problemi di massimizzazione possono essere convertiti in problemi di minimizzazione (e viceversa), così come è possibile manipolare le singole disequazioni.
+Queste operazioni servono a riportare i problemi in una forma che permetta di utilizzarli da parte dei solver. In particolare vengono utilizzate la forma *canonica* e la forma *standard*.
+
+Un problema (di massimizzazione) è in forma canonica se è nella forma
+$$
+\max c^T x \\
+\text{subject to} \\
+Ax \leq b
+$$
+
+Considerando che qualsiasi disequazione nella forma $\alpha x \leq y$ può essere convertita in una equazione equivalente $\alpha x + \delta = b$ definiamo la forma standard di un problema in forma canonica
+$$
+\max d^T x \\
+\text{subject to} \\
+A'x = b
+$$
+
+con $A' = (A | I) \in \mathbb{R}^{m \times (n + m)}$ e $d = (c | 0) \in \mathbb{R}^{n + m}$
+
+In altre parole aggiungiamo una nuova variabile al problema (detta variabile *slack*) per ogni disequazione.
+
+La forma standard è quella che viene utilizzata dagli algoritmi di soluzione.
+
+## Metodo del simplesso a due fasi
+Il metodo del simplesso è un'algoritmo per risolvere i problemi di ottimizzazione lineari.
+
+Si basa sul teorema secondo il quale le soluzioni (dette *soluzioni di base*) di un qualsiasi problema in forma standard sono i *vertici* del poliedro costruito sui vincoli.
+
+Ogni vertice è individuato da una o più *soluzioni di base ammissibili*, cioè tutti i valori delle variabili in base sono maggiori o uguali a 0, mentre il valore delle altre variabili è 0.
+Se in base sono presenti uno o più valori uguali a 0, si dice che la base è *degenere*.
 
 # Scelte implementative e algoritmi utilizzati
 ## Gestione della memoria
