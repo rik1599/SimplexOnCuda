@@ -17,6 +17,7 @@ abstract: |
 output:
   pdf_document:
     toc: true
+    extra_dependencies: ["multirow"]
 ---
 
 ```{r setup, include=FALSE}
@@ -151,15 +152,15 @@ In questa fase viene risolto un problema ausiliario
   x \geq 0, y \geq 0
 \end{gather*}
 
-Allo scopo di:
+In altre parole si tratta si inserire $m$ nuove variabili al problema (una per vincolo). Queste sono dette *variabili artificiali*.
 
-- capire se il problema iniziale ha soluzione è infeasible: in questo caso il valore finale della funzione obiettivo è negativo
+Questa fase ha tre scopi:
+
+- capire se il problema iniziale è infeasible: in questo caso il valore finale della funzione obiettivo è negativo
 
 - capire se il problema ha una o più soluzioni degeneri: in questo caso la base ottenuta alla fine di questa fase contiene una o più variabili artificiali
 
 - se non si presenta nessuno di questi due casi, fornire in input alla fase successiva una base ammissibile di partenza
-
-In altre parole si tratta si inserire $m$ nuove variabili al problema (una per vincolo). Queste sono dette *variabili artificiali*.
 
 Ad esempio per il problema
 
