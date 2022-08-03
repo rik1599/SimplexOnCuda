@@ -102,6 +102,8 @@ Si tratta di una matrice composta nel seguente modo:
 
 La prima riga della matrice sono i coefficienti della funzione obiettivo con segno invertito, mentre il primo valore dell'ultima colonna è il valore della funzione obiettivo.
 
+La base viene memorizzata in un vettore a parte.
+
 ### Algoritmo
 1. Controllo se tutti i coefficienti del vettore dei costi sono maggiori o uguali a 0. Se sì, allora il mio problema è risolto e procedo a ricavare la soluzione, altrimenti proseguo
 
@@ -110,7 +112,9 @@ La prima riga della matrice sono i coefficienti della funzione obiettivo con seg
 3. Costruisco il *vettore degli indicatori* dividendo il vettore dei termini noti con il vettore colonna della variabile che entra in base
 
 4. Trovo la posizione dell'elemento minimo nel vettore degli indicatori ($R_p$).
-Questa operazione serve a individuare quale variabile deve uscire dalla base (Es. se il minimo si trova a riga 3 allora dalla base uscirà la variabile memorizzata in posizione 3 nel vettore della base)
+Questa operazione serve a individuare quale variabile deve uscire dalla base. 
+
+Infatti, essendo il tableau una matrice di rango pieno, la base sarà sempre composta da tante colonne quanti sono i vincoli e la scelta della variabile uscente dipenderà unicamente dal valore dell'indicatore (al valore dell'indicatore più basso corrisponde al maggiore incremento possibile della funzione obiettivo al passo successivo). Per questo motivo andando a selezionare l'$i$-esima riga del tableau si andrà a sostituire l'$i$-esima variabile contenuta nel vettore della base con la variabile entrante.
 
 5. Individuo il *pivot* $p = R_p \cap C_p$.
 
