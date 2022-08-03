@@ -216,7 +216,7 @@ Con $R_0[B[i]]$ e $R_i[B[i]]$ rispettivamente il valore della prima riga e della
 
 Si noti come questo passo sia una generalizzazione di quanto già visto in precedenza per la fase 1.
 
-A questo punto si può procedere con l'esecuzione dell'algoritmo del simplesso, con l'aggiunta di un passaggio tra il passo 2. e il passo 3. per controllare se il problema è unbounded: se tutti i coefficienti del vettore colonna che sta per entrare in base sono $\leq 0$ allora il problema è unbounded su quella variabile, altrimenti si può proseguire con la soluzione.
+A questo punto si può procedere con l'esecuzione dell'algoritmo del simplesso, con l'aggiunta di un passaggio tra il passo 2. e il passo 3. per controllare se il problema è unbounded: se tutti i coefficienti del vettore colonna che sta per entrare in base sono $\leq 0$ allora il problema è unbounded su quella variabile, altrimenti si può proseguire con la ricerca del pivot.
 
 # Scelte implementative e algoritmi utilizzati
 ## Gestione della memoria
