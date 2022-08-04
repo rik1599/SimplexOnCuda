@@ -50,7 +50,7 @@ Utilizzando i teoremi e le tecniche dell'algebra lineare è stato possibile crea
 ### Problemi risolvibili, non risolvibili, illimitati
 Dato un problema di ottimizzazione, questo può essere di tre tipi:
 
-- avere una o più soluzioni ammissibili (*feasible*): ossia esistono uno o più vettori che moltiplicati per il vettore dei costi assegnano alla funzione obiettivo il valore massimo (o minimo possibile) e tutti i vincoli sono veri,
+- avere una o più soluzioni ammissibili (*feasible*): ossia esistono uno o più vettori che moltiplicati per il vettore dei costi assegnano alla funzione obiettivo il valore massimo (o minimo possibile) e tutti i vincoli sono rispettati,
 
 - non risolvibili (*infeasible*): se non esistono soluzioni
 
@@ -94,6 +94,8 @@ Se in base sono presenti uno o più valori uguali a 0, si dice che la base è *d
 
 Esistono diverse implementazioni del metodo del simplesso, per questo progetto verrà implementato il cosiddetto *simplesso a due fasi con il metodo del tableau*
 
+![Esempio di problema con due variabili. Il vertice evidenziato in blu è la soluzione](img/polyhedra.png)
+
 ### Cos'è il tableau
 Il tableau di un simplesso è la struttura dati su cui viene eseguito l'algoritmo del simplesso.
 
@@ -101,8 +103,7 @@ Si tratta di una matrice composta nel seguente modo:
 
 ![](img/tableau.png)
 
-La prima riga della matrice sono i coefficienti della funzione obiettivo con segno invertito, mentre il primo valore dell'ultima colonna è il valore della funzione obiettivo.
-
+Nella prima riga della matrice ($R_0$) è presente il vettore dei costi (coefficienti della funzione obiettivo) con i segni invertiti.
 La base viene memorizzata in un vettore a parte.
 
 ### Algoritmo
@@ -183,7 +184,7 @@ Il corrispondente problema ausiliario sarà
 Si avrà quindi il seguente tableau
 \begin{tabular}{llllll|l}
 $x_1$ & $x_2$ & $s_1$ & $s_2$ & $a_1$ & $a_2$ & RHS \\ \hline
-0     & 0     & 0     & 0     & 1     & 1     & 0   \\
+0     & 0     & 0     & 0     & 1     & 1     & 0   \\ \hline
 1     & 1     & 1     & 0     & 1     & 0     & 1   \\
 3     & 2     & 0     & 1     & 0     & 1     & 6  
 \end{tabular}
@@ -198,7 +199,7 @@ $$ R_0 = R_0 - R_i \quad \forall i = 1,\dots,m $$
 
 \begin{tabular}{llllll|l}
 $x_1$ & $x_2$ & $s_1$ & $s_2$ & $a_1$ & $a_2$ & RHS \\ \hline
--4    & -3    & -1    & -1    & 0     & 0     & -7  \\
+-4    & -3    & -1    & -1    & 0     & 0     & -7  \\ \hline
 1     & 1     & 1     & 0     & 1     & 0     & 1   \\
 3     & 2     & 0     & 1     & 0     & 1     & 6  
 \end{tabular}
@@ -220,8 +221,33 @@ Si noti come questo passo sia una generalizzazione di quanto già visto in prece
 A questo punto si può procedere con l'esecuzione dell'algoritmo del simplesso, con l'aggiunta di un passaggio tra il passo 2. e il passo 3. per controllare se il problema è unbounded: se tutti i coefficienti del vettore colonna che sta per entrare in base sono $\leq 0$ allora il problema è unbounded su quella variabile, altrimenti si può proseguire con la ricerca del pivot.
 
 # Scelte implementative e algoritmi utilizzati
+## Schema di parallelizzazione
+Per introdurre parallelismo si è deciso di parallelizzare i singoli passi che lo compongono, mantenendo invece sequenziale la struttura dell'algoritmo in sè.
+
+Così facendo non si prevede una riduzione della complessità teorica dell'algoritmo, ma ottenere un miglioramento empirico sui tempi necessari a risolvere modelli anche molto complessi (in quanto si va a ridurre la complessità delle singole operazioni sui vettori e sulle matrici).
+
 ## Gestione della memoria
-### Estrazione delle colonne dalla matrice
+Implementando gli algoritmi in CUDA, merita particolare risalto il modo in cui viene organizzata la memoria:
+
+- i dati del problema originale sono memorizzati in memoria host, mentre il tableau viene costruito e memorizzato nella memoria globale della scheda video
+
+- i dati del problema originale vengono memorizzati utilizzando memoria *page-locked*, questo per permettere i trasferimenti di memoria in parallelo con i CUDA Stream (e quindi ottimizzare la fase di costruzione del tableau in global memory)
+
+- il vettore della base è memorizzato come memoria *mapped page-locked*, in modo da potervi accedere sia lato host che lato GPU
+in qualsiasi momento senza dover gestire i trasferimenti
+
+- siccome l'algoritmo opera spesso su singole righe o colonne è fondamentale memorizzare i dati in memoria globale in modo da minimizzare il numero di accessi strided o disallineati. Per questo motivi si è deciso il seguente schema di memorizzazione (visibile in figura \ref{fig:memory}):
+    
+    - la matrice del tableau viene allocata con *cudaMallocPitch* ed è memorizzata in maniera *lineare* per **colonne**. In altre parole l'implementazione lavorerà sul tableau trasposto. Questo perchè l'algoritmo tende ad accedere più alle singole colonne che alle singole righe. Infatti così facendo sarà necessario implementare solo un kernel che accede alla memoria in maniera strided (laddove la classica memorizzazione per righe avrebbe richiesti tre),
+    
+    - il vettore dei termini noti non viene memorizzato in fondo al tableau, ma nella prima riga della matrice. In questo modo nel passaggio dalla fase 1 alla fase 2 non è necessario spostare la colonna nella matrice, ma è sufficiente troncare il numero di righe della matrice da una variabile,
+
+    - il vettore dei costi non viene memorizzato nella matrice del tableau, ma in un vettore a parte e il valore della funzione obiettivo è nel primo elemento di questo vettore.
+
+```{r memory, echo=FALSE, fig.cap="Schema di memorizzazione in memoria globale", out.width="50%", fig.align="center"}
+knitr::include_graphics("img/memory.png")
+```
+
 ## Ricerca del pivot e test di ottimalità
 ## Eliminazione di Gauss
 ## Aggiornamento della tabella
