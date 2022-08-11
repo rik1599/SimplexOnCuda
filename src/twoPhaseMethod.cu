@@ -1,24 +1,43 @@
 #include "twoPhaseMethod.h"
 #include "error.cuh"
 
-/** Inserisce una matrice di indentità in coda a una matrice
+/** Inserisce due matrici di indentità in coda a una matrice
+ *  Si suppone sia linearizzata per colonne (non penso sia possibile generalizzare)
  * 
  * @param mat - puntatore alla matrice
  * @param rows - righe della matrice
  * @param cols - colonne della matrice
- * @param startCol - colonna di partenza
+ * @param startRow - riga di partenza
  * @param dim - dimensione dell'identità
+ * @param pitch - il pitch della matrice
  */
-__global__ void fillMatrix(TYPE* mat, int rows, int cols, int startCol, int dim)
+__global__ void fillMatrix(TYPE* mat, int rows, int cols, int startRow, int dim, size_t pitch)
 {
-
+    //grid stride per la generalità
+    for(int idX = threadIdx.x + blockIdx.x*blockDim.x; idX < dim; idX += gridDim.x * blockDim.x){
+        *(INDEX(mat, (idX+startRow), idX, pitch)) = 1;
+        *(INDEX(mat, (idX+startRow+dim), idX, pitch)) = 1;
+    }
 }
 
-/** Inizializza il vettore della base con numeri progressivi da start a start + size - 1
+/**
+ * Inizializza il vettore della base con numeri progressivi da start a start + size - 1
  */
 __global__ void fillBaseVector(int* base, int size, int start)
 {
+    for(int idX = threadIdx.x + blockIdx.x*blockDim.x; idX < size; idX += gridDim.x * blockDim.x){
+        base[idX] = (start+idX);
+    }
+}
 
+/**
+ * Setta a 1 tutti gli elementi del vettore da start a size-1
+ */
+__global__ void setVectorToOne(TYPE* vector, int size, int start)
+{
+    for(int idX = threadIdx.x + blockIdx.x*blockDim.x; start + idX < size; idX += gridDim.x * blockDim.x){
+        vector[idX] = 1;
+    }
 }
 
 /** Implementa in parallelo operazioni del tipo
@@ -30,10 +49,34 @@ __global__ void fillBaseVector(int* base, int size, int start)
  * L'operazione viene fatta "per tile"
  * 
  * Si tratta di una variante dell'esercizio dell'istogramma visto a lezione 
+ * 
  */
-__global__ void gaussianElimination(TYPE* mat, TYPE* lastCol, TYPE* coefficients, int rows, int cols)
+__global__ void gaussianElimination(TYPE* mat, TYPE* objectiveFunction, TYPE* coefficients, int rows, int cols, size_t pitch)
 {
+    int colsTotal = ((cols + blockDim.x - 1)/blockDim.x) * blockDim.x;
 
+    for(int idX = threadIdx.x + blockIdx.x * blockDim.x * 2; idX<colsTotal; idX += 2 * gridDim.x*blockDim.x){
+        for(int idY = threadIdx.y + blockIdx.y * blockDim.y; idY<rows; idY += gridDim.y*blockDim.y){
+
+            // prendiamo il valore per questo specifico thread sommando nel caricamento (stando attenti a settare a zero il valore)
+            TYPE value = idX < cols && idX + blockDim.x < cols ?  *(INDEX(mat, idY, idX, pitch)) * coefficients[idX] +
+                                                                  *(INDEX(mat, idY, idX + blockDim.x, pitch)) * coefficients[idX + blockDim.x]
+                                                                : (idX < cols ? *(INDEX(mat, idY, idX, pitch)) * coefficients[idX]
+                                                                : 0);
+
+            __syncthreads();
+
+            //riduzione intra warp
+            for(int offset = 1; offset < 32; offset *= 2){
+                value += __shfl_xor_sync(0xffffff, value, offset);
+            }
+
+            if(threadIdx.x == 0){
+                atomicAdd(&objectiveFunction[idY], -1 * value);
+            }
+            
+        }
+    }
 }
 
 /** Scandisce il vettore della base per creare il vettore dei coefficienti.
@@ -42,14 +85,17 @@ __global__ void gaussianElimination(TYPE* mat, TYPE* lastCol, TYPE* coefficients
  */
 __global__ void createCoefficientVector(TYPE* firstRow, int cols, int* base, int rows, TYPE* coefficients)
 {
-
+    for(int idX = threadIdx.x + blockIdx.x * blockDim.x; idX<cols; idX += gridDim.x*blockDim.x){
+        coefficients[idX] = firstRow[base[idX]]; 
+    } 
 }
 
-/** Esprimo la funzione obiettivo in termini delle variabili non di base (vedi es. istogramma)
+/**
+ * Esprimo la funzione obiettivo in termini delle variabili non di base (vedi es. istogramma)
  */
 void updateObjectiveFunction(tabular_t* tabular)
 {
-
+    
 }
 
 /**
