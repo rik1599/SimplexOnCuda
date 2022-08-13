@@ -50,6 +50,17 @@ __global__ void setVectorToOne(TYPE* vector, int size, int start)
  * 
  * Si tratta di una variante dell'esercizio dell'istogramma visto a lezione 
  * 
+ * Funziona al meglio se chiamato con blocchi 32x32 e grid di dimensione (1, k);
+ * 
+ * Ogni blocco esegue su due volte la sua dimensione orizzontale
+ * 
+ * Da usare per CC < 6.0
+ * 
+ * @param mat - il puntatore alla matrice dei vincoli
+ * @param objectiveFunction - il puntatore alla funzione obiettivo
+ * @param coefficients - il puntatore al vettore dei coefficienti
+ * @param rows - il numero di righe di mat (se corretto è anche uguale alla dimensione della funzione obiettivo)
+ * @param columns - il numero di colonne di mat (se corretto è anche uguale alla dimensione del vettore dei coefficienti)
  */
 __global__ void gaussianElimination(TYPE* mat, TYPE* objectiveFunction, TYPE* coefficients, int rows, int cols, size_t pitch)
 {
@@ -79,13 +90,42 @@ __global__ void gaussianElimination(TYPE* mat, TYPE* objectiveFunction, TYPE* co
     }
 }
 
+/**
+ * Stesso di quello sopra ed ha prestazioni simili ma è più semplice
+ * 
+ * Ogni blocco esegue su due volte la sua dimensione orizzontale
+ * 
+ * Da usare per CC > 6.0
+ * 
+ * @param mat - il puntatore alla matrice dei vincoli
+ * @param objectiveFunction - il puntatore alla funzione obiettivo
+ * @param coefficients - il puntatore al vettore dei coefficienti
+ * @param rows - il numero di righe di mat (se corretto è anche uguale alla dimensione della funzione obiettivo)
+ * @param columns - il numero di colonne di mat (se corretto è anche uguale alla dimensione del vettore dei coefficienti)
+ */
+__global__ void gaussianEliminationNaive(TYPE* mat, TYPE* objectiveFunction, TYPE* coefficients, int rows, int cols, size_t pitch){
+    for(int idX = threadIdx.x + (blockIdx.x * blockDim.x * 2); idX<cols; idX += 2 * gridDim.x*blockDim.x){
+        for(int idY = threadIdx.y + blockIdx.y * blockDim.y; idY<rows; idY += gridDim.y*blockDim.y){    
+            atomicAdd(&objectiveFunction[idY], -1 * (idX + blockDim.x < cols ? ((*(INDEX(mat, idY, idX, pitch)) * coefficients[idX]) +
+                                                                            (*(INDEX(mat, idY, (idX + blockDim.x), pitch))) * coefficients[idX + blockDim.x]) : 
+                                                                            (*(INDEX(mat, idY, idX, pitch))) * coefficients[idX]));
+        }
+    }
+}
+
+
 /** Scandisce il vettore della base per creare il vettore dei coefficienti.
  * 
  * Sostanzialmente coefficients[i] = firstRow[base[i]]
+ * 
+ * @param firstRow - puntatore al primo elemento della funzione obiettivo (quindi funzione obiettivo + 1)
+ * @param baseSize - dimensione del vettore della base e del vettore dei coefficienti
+ * @param base - punteatore al vettore della base
+ * @param coefficients - puntatore al vettore dove salvare i coefficienti
  */
-__global__ void createCoefficientVector(TYPE* firstRow, int cols, int* base, int rows, TYPE* coefficients)
+__global__ void createCoefficientVector(TYPE* firstRow, int baseSize, int* base, TYPE* coefficients)
 {
-    for(int idX = threadIdx.x + blockIdx.x * blockDim.x; idX<cols; idX += gridDim.x*blockDim.x){
+    for(int idX = threadIdx.x + blockIdx.x * blockDim.x; idX<baseSize; idX += gridDim.x*blockDim.x){
         coefficients[idX] = firstRow[base[idX]]; 
     } 
 }
