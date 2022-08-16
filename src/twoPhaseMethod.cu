@@ -198,7 +198,7 @@ void fillTableu(tabular_t* tabular, int* base){
     int linearGridSize = (lastValues + (linearBlockSize-1))/linearBlockSize;
     
     setVectorToOne<<<linearGridSize, linearBlockSize, 0, *secondStream>>>(tabular->costsVector, tabular->rows, sizeToSetZero);
-    #ifdef DEBUG
+    #if DEBUG
         HANDLE_KERNEL_ERROR();
     #endif
     
@@ -233,7 +233,7 @@ void fillTableu(tabular_t* tabular, int* base){
                                                                         tabular->problem->vars,   //riga di partenza
                                                                         tabular->cols,            //largezza dell'identità
                                                                         tabular->pitch);          //pitch
-    #ifdef DEBUG
+    #if DEBUG
         HANDLE_KERNEL_ERROR();
     #endif
 
@@ -252,7 +252,7 @@ void fillTableu(tabular_t* tabular, int* base){
     * Punto 7: riempimento vettore della base con numeri progressivi da n+m a n+2m-1 (kernel)
     */
 
-       cudaStream_t *sixthStream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
+    cudaStream_t *sixthStream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
     HANDLE_ERROR(cudaStreamCreate(sixthStream));
     
     linearBlockSize = 512;
@@ -261,7 +261,7 @@ void fillTableu(tabular_t* tabular, int* base){
     fillBaseVector<<<linearGridSize, linearBlockSize, 0, *sixthStream>>>(base,
                                                                             tabular->cols,
                                                                             tabular->problem->vars + tabular->problem->constraints);
-    #ifdef DEBUG
+    #if DEBUG
         HANDLE_KERNEL_ERROR();
     #endif
 
@@ -299,8 +299,11 @@ int phase1(tabular_t* tabular, int* base)
     
     fillTableu(tabular, base);
     
-    #ifdef DEBUG
-        FILE* file = fopen("debug.txt", "w");
+    #if 1
+        FILE* file = fopen("debugPhase1.txt", "w");
+
+        fprintf(file, "\n\n\nTableu nella situazione iniziale\n\n\n");
+
         printTableauToStream(file, tabular);
 
         //printing della base
@@ -325,21 +328,25 @@ int phase1(tabular_t* tabular, int* base)
 
     updateObjectiveFunction(tabular, base);
 
-    #ifdef DEBUG
-        fprintf(file, "\n\n\n");
+    #if 1
+        fprintf(file, "\n\n\nTableu dopo l'eliminazione di gauss\n\n\n");
         printTableauToStream(file, tabular);
-        fclose(file);
-        exit(2);
     #endif
     
     /**
      * Fase 3: lancio del solver
      */
 
-    //TODO
+    solve(tabular, base);
+
+    #if 1
+        fprintf(file, "\n\n\nTableu dopo il lancio del primo solver\n\n\n");
+        printTableauToStream(file, tabular);
+        fclose(file);
+    #endif
 
     /**
-     * Fase 4: controllo valore
+     * Fase 4: controllo infattibilità
      */
 
     //TODO
@@ -354,26 +361,101 @@ int phase1(tabular_t* tabular, int* base)
      * Fase 6: lancio fase 2
      */
 
-    //TODO
-
-
-    return FEASIBLE;
+    return phase2(tabular, base);
 }
 
 /**
  * Passaggi per la fase 2
  * Dati m il numero di vincoli e n il numero di variabili
  * 
- * 1) Riduco il numero di colonne da n+2m a n+m (basta aggiornare il valore in tabular->cols)
- * 2) Uso due stream per riempire la prima riga
- *      1) Copio il vettore dei coefficienti nei primi n elementi della prima riga (cudaMemcpyAsync)
+ * 1) Riduco il numero di righe del tableu da n+2m+1 a n+m+1 (basta aggiornare il valore in tabular->rows) (perchè lavoriamo sulla trasposta)
+ * 2) Uso due stream per riempire la funzione obiettivo
+ *      1) Setto il primo elemento della funzione di costo a 0 (errore?)
+ *      2) Copio il vettore dei coefficienti nei seguenti n elementi della prima riga (cudaMemcpyAsync)
  *      2) Imposto i restanti m elementi a 0 (cudaMemsetAsync)
  * 3) Esprimo la funzione obiettivo in termini delle variabili non di base (vedi es. istogramma)
  * 4) Eseguo l'algoritmo di soluzione fino all'ottimo (file a parte)
  */
 int phase2(tabular_t* tabular, int* base)
 {
-    return FEASIBLE;
+    /**
+     * Fase 1: riduzione del numero di colonne
+    */
+
+    tabular->rows -= tabular->cols; //tabular->cols è m (?)
+   
+    #if DEBUG
+        FILE* file = fopen("debugPhase2.txt", "w");
+        fprintf(file, "\n\n\nTableu dopo aggiornamento colonne in phase2\n\n\n");
+        printTableauToStream(file, tabular);
+
+        int* host_base = (int*) malloc(sizeof(int) * tabular->cols);
+        HANDLE_ERROR(cudaMemcpy(
+            host_base,
+            base,
+            sizeof(int) * (tabular->cols),
+            cudaMemcpyDeviceToHost
+        ));
+
+        fprintf(file, "Vettore della base\n");
+        for(int i = 0; i < tabular->cols; i++ ){
+            fprintf(file, "%d\t", host_base[i]);
+        }
+        free(host_base);
+    #endif
+
+    /**
+     * Fase 2: riempimento prima riga su due stream diversi
+    */
+
+    cudaStream_t *firstStream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
+    cudaStream_t *secondStream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
+
+    //usiamo un solo stream per memsetAsync, magari ragionare se conviene cambiare
+    HANDLE_ERROR(cudaMemsetAsync(tabular->costsVector, 0, BYTE_SIZE(1), *firstStream)); //primo elemento del vettore dei costi a 0
+    HANDLE_ERROR(cudaMemsetAsync(tabular->costsVector, 0, BYTE_SIZE(tabular->cols), *firstStream)); //ultimi m elementi a 0
+
+    HANDLE_ERROR(cudaMemcpyAsync(tabular->costsVector + 1,
+                                    tabular->problem->objectiveFunction,
+                                    BYTE_SIZE(tabular->problem->vars),
+                                    cudaMemcpyHostToDevice,
+                                    *secondStream));
+    
+    //aspettiamo che i trasferimenti finiscano ed eliminiamo gli stream
+    cudaDeviceSynchronize();
+
+    HANDLE_ERROR(cudaStreamDestroy(*firstStream));
+    HANDLE_ERROR(cudaStreamDestroy(*secondStream));
+
+    #if DEBUG
+        fprintf(file, "\n\n\nTableu dopo riempimento fuznione obiettivo in phase2\n\n\n");
+        printTableauToStream(file, tabular);
+    #endif
+
+    /**
+     *  Fase 3: Eliminazione di gauss per esprimere la funzione obiettivo in termini delle variabili non di base
+    */
+
+    updateObjectiveFunction(tabular, base);
+
+    #if DEBUG
+        fprintf(file, "\n\n\nTableu dopo eliminazione di gauss in phase2\n\n\n");
+        printTableauToStream(file, tabular);
+    #endif
+
+    /**
+     * Fase 4: Esecuzione dell'algoritmo di risoluzione
+    */
+
+    #if DEBUG
+        int esito = solve(tabular, base);
+        fprintf(file, "\n\n\nTableu dopo seconda esecuzione del solver\n\n\n");
+        printTableauToStream(file, tabular);
+        fclose(file);
+        return esito;
+    #endif
+
+    return solve(tabular, base);
 }
 
 __inline__ void unregisterMemory(int* base_h, problem_t* problem)
