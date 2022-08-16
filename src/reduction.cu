@@ -1,11 +1,15 @@
 #include "reduction.cuh"
+#include "error.cuh"
+
+#define THREADS 512
+#define BL(N) min((N + THREADS - 1) / THREADS, 1024)
 
 // ============ minElement ====================
-__inline__ __device__ void warpReduceMin(volatile int *pVal, volatile int *pIndex)
+__inline__ __device__ void warpReduceMin(volatile TYPE *pVal, volatile int *pIndex)
 {
     for (int offset = warpSize >> 1; offset > 0; offset >>= 1)
     {
-        int shflVal = __shfl_down_sync(warpSize - 1, *pVal, offset);
+        TYPE shflVal = __shfl_down_sync(warpSize - 1, *pVal, offset);
         int shfIndex = __shfl_down_sync(warpSize - 1, *pIndex, offset);
         if (shflVal < *pVal)
         {
@@ -15,9 +19,9 @@ __inline__ __device__ void warpReduceMin(volatile int *pVal, volatile int *pInde
     }
 }
 
-__inline__ __device__ void blockReduceMin(volatile int *pVal, volatile int *pIndex)
+__inline__ __device__ void blockReduceMin(volatile TYPE *pVal, volatile int *pIndex)
 {
-    static __shared__ int sdata[32];
+    static __shared__ TYPE sdata[32];
     static __shared__ int sindex[32];
 
     int lane = threadIdx.x % warpSize;
@@ -43,9 +47,9 @@ __inline__ __device__ void blockReduceMin(volatile int *pVal, volatile int *pInd
 }
 
 template <bool isFirstExecution>
-__global__ void deviceReduceKernel(int* g_values, int* g_index, int N)
+__global__ void deviceReduceKernel(TYPE* g_values, unsigned int* g_index, int N)
 {
-    int minVal = INT_MAX;
+    TYPE minVal = INT_MAX * 1.0;
     int minIndex = -1;
 
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; 
@@ -53,7 +57,7 @@ __global__ void deviceReduceKernel(int* g_values, int* g_index, int N)
         i += blockDim.x * gridDim.x
     )
     {
-        int candidate = g_values[i];
+        TYPE candidate = g_values[i];
         if (candidate < minVal)
         {
             minVal = candidate;
@@ -76,12 +80,27 @@ __global__ void deviceReduceKernel(int* g_values, int* g_index, int N)
 
 TYPE minElement(TYPE* g_vet, unsigned int size, unsigned int* outIndex)
 {
-    return (TYPE)0.0;
+    unsigned int* g_index;
+    HANDLE_ERROR(cudaMalloc((void**)&g_index, BL(size) * sizeof(unsigned int)));
+
+    deviceReduceKernel<true><<<BL(size), THREADS>>>(g_vet, g_index, size);
+    if (BL(size) > 1)
+    {
+        deviceReduceKernel<false><<<1, 1024>>>(g_vet, g_index, BL(size));
+    }
+
+    TYPE parallelMin;
+    HANDLE_ERROR(cudaMemcpy(&parallelMin, g_vet, sizeof(int), cudaMemcpyDefault));
+    HANDLE_ERROR(cudaMemcpy(outIndex, g_index, sizeof(int), cudaMemcpyDefault));
+
+    cudaFree(g_index);
+
+    return parallelMin;
 }
 
 // ============ reduction with atomic ====================
 template <bool minimum>
-__inline__ __device__ void warpReduce(volatile int *pVal)
+__inline__ __device__ void warpReduce(volatile TYPE *pVal)
 {
     for (int offset = warpSize/2; offset > 0; offset /= 2)
     {   
@@ -93,9 +112,9 @@ __inline__ __device__ void warpReduce(volatile int *pVal)
 }
 
 template <bool minimum>
-__inline__ __device__ void blockReduce(volatile int *pVal)
+__inline__ __device__ void blockReduce(volatile TYPE *pVal)
 {
-    static __shared__ int sdata[32];
+    static __shared__ TYPE sdata[32];
 
     int lane = threadIdx.x % warpSize;
     int wid = threadIdx.x / warpSize;
@@ -121,9 +140,9 @@ __inline__ __device__ void blockReduce(volatile int *pVal)
 }
 
 template <bool minimum>
-__global__ void deviceReduceBlockAtomicKernel(int* g_data, int N)
+__global__ void deviceReduceBlockAtomicKernel(TYPE* g_data, unsigned int N)
 {
-    int partial = minimum ? INT_MAX : INT_MIN;
+    TYPE partial = minimum ? INT_MAX : INT_MIN;
 
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; 
         i < N; 
@@ -154,5 +173,13 @@ bool isGreaterThanZero(TYPE* g_vet, unsigned int size)
 
 bool isLessThanZero(TYPE* g_vet, unsigned int size)
 {
-    return true;
+    TYPE* g_vetCpy;
+    HANDLE_ERROR(cudaMalloc((void**)&g_vetCpy, BYTE_SIZE(size)));
+    HANDLE_ERROR(cudaMemcpy(g_vetCpy, g_vet, size, cudaMemcpyDefault));
+
+    deviceReduceBlockAtomicKernel<false><<<BL(size), THREADS>>>(g_vetCpy, size);
+    TYPE maximum = *g_vetCpy;
+    HANDLE_ERROR(cudaFree(g_vetCpy));
+    
+    return (maximum <= 0);
 }

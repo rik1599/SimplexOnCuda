@@ -13,7 +13,7 @@ int main(int argc, const char* argv[])
         exit(-1);
     }
 
-    problem_t* problem = generateRandomProblem(file);
+    problem_t* problem = generateRandomProblem(2, 2, 0);
  
     /*
     FILE* file;
