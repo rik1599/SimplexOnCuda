@@ -299,7 +299,7 @@ int phase1(tabular_t* tabular, int* base)
     
     fillTableu(tabular, base);
     
-    #if 1
+    #if DEBUG
         FILE* file = fopen("debugPhase1.txt", "w");
 
         fprintf(file, "\n\n\nTableu nella situazione iniziale\n\n\n");
@@ -328,7 +328,7 @@ int phase1(tabular_t* tabular, int* base)
 
     updateObjectiveFunction(tabular, base);
 
-    #if 1
+    #if DEBUG
         fprintf(file, "\n\n\nTableu dopo l'eliminazione di gauss\n\n\n");
         printTableauToStream(file, tabular);
     #endif
@@ -337,9 +337,11 @@ int phase1(tabular_t* tabular, int* base)
      * Fase 3: lancio del solver
      */
 
-    solve(tabular, base);
+    if(solve(tabular, base) != FEASIBLE){ //se unbounded torniamo al chiamante
+        return UNBOUNDED;
+    }
 
-    #if 1
+    #if DEBUG
         fprintf(file, "\n\n\nTableu dopo il lancio del primo solver\n\n\n");
         printTableauToStream(file, tabular);
         fclose(file);
@@ -351,6 +353,10 @@ int phase1(tabular_t* tabular, int* base)
 
     //TODO
 
+    //if(controlloInfattibilità == true){
+        //return INFEASIBLE;
+    //}
+
     /**
      * Fase 5: controllo degenere
      */
@@ -358,10 +364,10 @@ int phase1(tabular_t* tabular, int* base)
     //TODO
 
     /**
-     * Fase 6: lancio fase 2
+     * Fase 6: ritorno lo stato del problema (non chiamiamo direttamente phase2)
      */
 
-    return phase2(tabular, base);
+    return FEASIBLE;
 }
 
 /**
@@ -411,9 +417,13 @@ int phase2(tabular_t* tabular, int* base)
     cudaStream_t *firstStream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
     cudaStream_t *secondStream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
 
+    HANDLE_ERROR(cudaStreamCreate(firstStream));
+    HANDLE_ERROR(cudaStreamCreate(secondStream));
+
+
     //usiamo un solo stream per memsetAsync, magari ragionare se conviene cambiare
     HANDLE_ERROR(cudaMemsetAsync(tabular->costsVector, 0, BYTE_SIZE(1), *firstStream)); //primo elemento del vettore dei costi a 0
-    HANDLE_ERROR(cudaMemsetAsync(tabular->costsVector, 0, BYTE_SIZE(tabular->cols), *firstStream)); //ultimi m elementi a 0
+    HANDLE_ERROR(cudaMemsetAsync(tabular->costsVector + (1 + tabular->problem->vars), 0, BYTE_SIZE(tabular->cols), *firstStream)); //ultimi m elementi a 0
 
     HANDLE_ERROR(cudaMemcpyAsync(tabular->costsVector + 1,
                                     tabular->problem->objectiveFunction,
@@ -436,7 +446,7 @@ int phase2(tabular_t* tabular, int* base)
      *  Fase 3: Eliminazione di gauss per esprimere la funzione obiettivo in termini delle variabili non di base
     */
 
-    updateObjectiveFunction(tabular, base);
+    //updateObjectiveFunction(tabular, base);
 
     #if DEBUG
         fprintf(file, "\n\n\nTableu dopo eliminazione di gauss in phase2\n\n\n");
