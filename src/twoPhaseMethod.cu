@@ -178,7 +178,7 @@ void updateObjectiveFunction(tabular_t* tabular, int* base)
 void fillTableu(tabular_t* tabular, int* base){
     
     /**
-     * Punto 1: primi n+m+1 valori a 0 della funzione dei costi
+     * Punto 1: primi n + m valori a 0 della funzione dei costi
      */
 
     cudaStream_t *firstStream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
@@ -198,9 +198,6 @@ void fillTableu(tabular_t* tabular, int* base){
     int linearGridSize = (lastValues + (linearBlockSize-1))/linearBlockSize;
     
     setVectorToOne<<<linearGridSize, linearBlockSize, 0, *secondStream>>>(tabular->costsVector, tabular->rows, sizeToSetZero);
-    #if DEBUG
-        HANDLE_KERNEL_ERROR();
-    #endif
     
     /**
     * Punto 3: copia della matrice dei vincoli originale dalla prima riga di tabular->table sulle prime n colonne (cudaMemcpy2DAsync)
@@ -233,9 +230,6 @@ void fillTableu(tabular_t* tabular, int* base){
                                                                         tabular->problem->vars,   //riga di partenza
                                                                         tabular->cols,            //largezza dell'identità
                                                                         tabular->pitch);          //pitch
-    #if DEBUG
-        HANDLE_KERNEL_ERROR();
-    #endif
 
     /**
     * Punto 6: copia del vettore dei termini noti nel vettore degli indicatori (cudaMemcpyAsync)
@@ -261,15 +255,7 @@ void fillTableu(tabular_t* tabular, int* base){
     fillBaseVector<<<linearGridSize, linearBlockSize, 0, *sixthStream>>>(base,
                                                                             tabular->cols,
                                                                             tabular->problem->vars + tabular->problem->constraints);
-    #if DEBUG
-        HANDLE_KERNEL_ERROR();
-    #endif
-
-    /**
-     * Sincornizziazzione kernel distruzione streams
-     */
-
-    cudaDeviceSynchronize();
+    HANDLE_KERNEL_ERROR();
 
     //distruggiamo gli stream
     HANDLE_ERROR(cudaStreamDestroy(*firstStream));

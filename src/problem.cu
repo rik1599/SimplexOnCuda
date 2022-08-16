@@ -4,7 +4,7 @@
 
 #include <stdlib.h>
 
-#define MINIMUM_GENERATION -1000
+#define MINIMUM_GENERATION 0
 #define MAXIMUM_GENERATION +1000
 
 
