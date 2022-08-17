@@ -47,10 +47,10 @@ __inline__ void print(FILE* Stream, tabular_t* tabular)
     HANDLE_ERROR(cudaMemcpy2D(
         hTable,
         BYTE_SIZE(tabular->cols),
-        tabular->constraintsMatrix,
+        tabular->table,
         tabular->pitch,
         BYTE_SIZE(tabular->cols),
-        tabular->rows - 1,
+        tabular->rows,
         cudaMemcpyDeviceToHost
     ));
 
@@ -67,24 +67,20 @@ __inline__ void print(FILE* Stream, tabular_t* tabular)
     HANDLE_ERROR(cudaMemcpy(
         hCosts,
         tabular->costsVector,
-        tabular->rows,
+        BYTE_SIZE(tabular->rows),
         cudaMemcpyDeviceToHost
     ));
 
     fprintf(Stream, "\n--------------- Tabular --------------\n");
-    for (size_t i = 0; i < tabular->rows-1; i++)
+    for (size_t i = 0; i < tabular->rows; i++)
     {
         for (size_t j = 0; j < tabular->cols; j++)
         {
             fprintf(Stream, "%.2lf\t", hTable[i * tabular->cols + j]);
         }
-        fprintf(Stream, "%.2lf\n", hIndicators[i]);
-    }
-    fprintf(Stream, "\n--------------------------------------\n");
-    fprintf(Stream, "Vettore dei costi: ");
-    for (size_t i = 0; i < tabular->rows; i++)
-    {
-        fprintf(Stream, "%.2lf\t", hCosts[i]);
+
+        fprintf(Stream, "\t|\t %.2lf\n", hCosts[i]);
+        if(i==0) fprintf(Stream, "\n");
     }
 }
 
