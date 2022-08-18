@@ -1,3 +1,5 @@
+#pragma once
+
 #define DEBUG
 
 #define TYPE double
@@ -5,5 +7,12 @@
 #define TYPE_SIZE sizeof(TYPE)
 #define BYTE_SIZE(count) count * TYPE_SIZE
 
-#define ROW(vet, row, pitch) (TYPE*) ((char*) vet + row * pitch)
-#define INDEX(vet, row, col, pitch) ROW(vet, row, pitch) + col
+__inline__ TYPE* ROW(TYPE* vet, int row, size_t pitch)
+{
+    return (TYPE*) ((char*) vet + row * pitch);
+}
+
+__inline__ TYPE* INDEX(TYPE* vet, int row, int col, size_t pitch)
+{
+    return ROW(vet, row, pitch) + col;
+}

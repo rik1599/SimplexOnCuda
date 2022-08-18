@@ -1,22 +1,25 @@
 #include "twoPhaseMethod.h"
 #include "error.cuh"
 
+#define THREADS 512
+#define BL(N) min((N + THREADS - 1) / THREADS, 1024)
+
 /** Inserisce due matrici di indentità in coda a una matrice
  *  Si suppone sia linearizzata per colonne (non penso sia possibile generalizzare)
  * 
  * @param mat - puntatore alla matrice
- * @param rows - righe della matrice
  * @param cols - colonne della matrice
- * @param startRow - riga di partenza
- * @param dim - dimensione dell'identità
  * @param pitch - il pitch della matrice
  */
-__global__ void fillMatrix(TYPE* mat, int rows, int cols, int startRow, int dim, size_t pitch)
+__global__ void fillMatrix(TYPE* mat, int rows, int cols, size_t pitch)
 {
+    int idX = threadIdx.x + blockIdx.x * blockDim.x;
+    int step = gridDim.x * blockDim.x;
+
     //grid stride per la generalità
-    for(int idX = threadIdx.x + blockIdx.x*blockDim.x; idX < dim; idX += gridDim.x * blockDim.x){
-        *(INDEX(mat, (idX+startRow), idX, pitch)) = 1;
-        *(INDEX(mat, (idX+startRow+dim), idX, pitch)) = 1;
+    for(; idX < cols; idX += step){
+        *(INDEX(mat, idX, idX, pitch)) = 1;
+        *(INDEX(mat, idX + cols, idX, pitch)) = 1;
     }
 }
 
@@ -37,9 +40,12 @@ __global__ void fillBaseVector(int* base, int size, int start)
  * @param size - la dimensione del vettore
  * @param start - il punto di partenza
  */
-__global__ void setVectorToOne(TYPE* vector, int size, int start)
-{
-    for(int idX = threadIdx.x + blockIdx.x*blockDim.x + start; idX < size; idX += gridDim.x * blockDim.x){
+__global__ void setVectorToOne(TYPE* vector, int size)
+{   
+    int idX = threadIdx.x + blockIdx.x * blockDim.x; 
+    int step = gridDim.x * blockDim.x;
+    for(; idX < size; idX += step)
+    {
         vector[idX] = 1;
     }
 }
@@ -204,55 +210,50 @@ void fillTableu(tabular_t* tabular, int* base){
      * Punto 1: primi n + m valori a 0 della funzione dei costi
      */
 
-    cudaStream_t *firstStream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
-    HANDLE_ERROR(cudaStreamCreate(firstStream));
-    int sizeToSetZero = (tabular->problem->vars) + (tabular->problem->constraints) + 1;
-    HANDLE_ERROR(cudaMemsetAsync((void *) (tabular->costsVector), 0, BYTE_SIZE(sizeToSetZero), *firstStream));
+    cudaStream_t firstStream;
+    HANDLE_ERROR(cudaStreamCreate(&firstStream));
+    int sizeToSetZero = tabular->problem->vars + tabular->problem->constraints + 1;
+    HANDLE_ERROR(cudaMemsetAsync(tabular->costsVector, 0, BYTE_SIZE(sizeToSetZero), firstStream));
 
     /**
-     * Punto 2: primi n+m+1 valori a 0 della funzione dei costi
+     * Punto 2: ultimi m valori della prima riga a 1 (kernel)
      */
 
-    cudaStream_t *secondStream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
-    HANDLE_ERROR(cudaStreamCreate(secondStream));
-    int lastValues = tabular->problem->constraints;
-
-    int linearBlockSize = 1024; //temporaneo, possibilmente renderlo reattivo
-    int linearGridSize = (lastValues + (linearBlockSize-1))/linearBlockSize;
+    cudaStream_t secondStream;
+    HANDLE_ERROR(cudaStreamCreate(&secondStream));
     
-    setVectorToOne<<<linearGridSize, linearBlockSize, 0, *secondStream>>>(tabular->costsVector, tabular->rows, sizeToSetZero);
+    setVectorToOne<<<BL(tabular->problem->constraints), THREADS, 0, secondStream>>>
+        (tabular->costsVector + sizeToSetZero, tabular->problem->constraints);
     
     /**
-    * Punto 3: copia della matrice dei vincoli originale dalla prima riga di tabular->table sulle prime n colonne (cudaMemcpy2DAsync)
+    * Punto 3: copia della matrice dei vincoli originale dalla seconda riga di tabular->table sulle prime n colonne (cudaMemcpy2DAsync)
     */
-    cudaStream_t *thirdStream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
-    HANDLE_ERROR(cudaStreamCreate(thirdStream));
+    cudaStream_t thirdStream;
+    HANDLE_ERROR(cudaStreamCreate(&thirdStream));
 
-    HANDLE_ERROR(cudaMemcpy2DAsync(tabular->constraintsMatrix,  //destinazione
-                    tabular->pitch,                             //pitch della destinazione
-                    tabular->problem->constraintsMatrix,        //fonte
-                    BYTE_SIZE(tabular->problem->constraints),   //pitch della fonte
-                    BYTE_SIZE(tabular->problem->constraints),   //larghezza matrice
-                    tabular->problem->vars,                     //alteezza matrice
-                    cudaMemcpyHostToDevice,                     //tipo
-                    *thirdStream));                             //stream
+    HANDLE_ERROR(cudaMemcpy2DAsync(
+        tabular->constraintsMatrix,                 //destinazione
+        tabular->pitch,                             //pitch della destinazione
+        tabular->problem->constraintsMatrix,        //fonte
+        BYTE_SIZE(tabular->problem->constraints),   //pitch della fonte
+        BYTE_SIZE(tabular->problem->constraints),   //larghezza matrice
+        tabular->problem->vars,                     //altezza matrice
+        cudaMemcpyHostToDevice,                     //tipo
+        thirdStream                                 //stream
+    ));                             
 
-    
     /**
     * Punto 4 e 5: riempimento delle successive m colonne con identità (kernel)
     */
-    cudaStream_t *fourthStream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
-    HANDLE_ERROR(cudaStreamCreate(fourthStream));
+    cudaStream_t fourthStream;
+    HANDLE_ERROR(cudaStreamCreate(&fourthStream));
 
-    linearBlockSize = 512;
-    linearGridSize = (tabular->cols + linearBlockSize-1) / linearBlockSize;
-
-    fillMatrix<<<linearGridSize, linearBlockSize, 0, *fourthStream>>>(tabular->constraintsMatrix, //matrice dei vincoli (skippiamo la prima riga)
-                                                                        tabular->rows-1,          //la matrice dei vincoli ha righe rowa-1 (rows conta anche la prima riga)
-                                                                        tabular->cols,            //colonne della matrice
-                                                                        tabular->problem->vars,   //riga di partenza
-                                                                        tabular->cols,            //largezza dell'identità
-                                                                        tabular->pitch);          //pitch
+    fillMatrix<<<BL(tabular->cols), THREADS, 0, fourthStream>>>(
+            ROW(tabular->constraintsMatrix, tabular->problem->vars, tabular->pitch),
+            2 * tabular->cols,          //la matrice dei vincoli ha righe rowa-1 (rows conta anche la prima riga)
+            tabular->cols,              //colonne della matrice
+            tabular->pitch              //pitch
+    );
 
     /**
     * Punto 6: copia del vettore dei termini noti nel vettore degli indicatori (cudaMemcpyAsync)
@@ -336,7 +337,7 @@ int phase1(tabular_t* tabular, int* base)
     
     fillTableu(tabular, base);
     
-    #if DEBUG
+    #ifdef DEBUG
         FILE* file = fopen("debugPhase1.txt", "w");
 
         fprintf(file, "\n\n\nTableu nella situazione iniziale\n");
@@ -365,7 +366,7 @@ int phase1(tabular_t* tabular, int* base)
 
     updateObjectiveFunction(tabular, base);
 
-    #if DEBUG
+    #ifdef DEBUG
         fprintf(file, "\n\n\nTableu dopo l'eliminazione di gauss\n");
         printTableauToStream(file, tabular);
     #endif
@@ -378,7 +379,7 @@ int phase1(tabular_t* tabular, int* base)
         return UNBOUNDED;
     }
 
-    #if DEBUG
+    #ifdef DEBUG
         fprintf(file, "\n\n\nTableu dopo il lancio del primo solver\n");
         printTableauToStream(file, tabular);
         fclose(file);
@@ -429,7 +430,7 @@ int phase2(tabular_t* tabular, int* base)
 
     tabular->rows -= tabular->cols;
    
-    #if DEBUG
+    #ifdef DEBUG
         FILE* file = fopen("debugPhase2.txt", "w");
         fprintf(file, "\n\n\nTableu dopo aggiornamento colonne in phase2\n");
         printTableauToStream(file, tabular);
@@ -476,7 +477,7 @@ int phase2(tabular_t* tabular, int* base)
     HANDLE_ERROR(cudaStreamDestroy(*firstStream));
     HANDLE_ERROR(cudaStreamDestroy(*secondStream));
 
-    #if DEBUG
+    #ifdef DEBUG
         fprintf(file, "\n\n\nTableu dopo riempimento funzione obiettivo in phase2\n");
         printTableauToStream(file, tabular);
     #endif
@@ -487,7 +488,7 @@ int phase2(tabular_t* tabular, int* base)
 
     updateObjectiveFunction(tabular, base);
 
-    #if DEBUG
+    #ifdef DEBUG
         fprintf(file, "\n\n\nTableu dopo eliminazione di gauss in phase2\n");
         printTableauToStream(file, tabular);
     #endif
@@ -497,7 +498,7 @@ int phase2(tabular_t* tabular, int* base)
     */
 
     //in ogni caso solo un solve viene lanciato
-    #if DEBUG
+    #ifdef DEBUG
         int esito = solve(tabular, base);
         fprintf(file, "\n\n\nTableu dopo seconda esecuzione del solver\n\n\n");
         printTableauToStream(file, tabular);

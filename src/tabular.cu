@@ -28,12 +28,12 @@ tabular_t* newTabular(problem_t* problem)
     
     tabular->problem = problem;
     tabular->cols = problem->constraints;
-    tabular->rows = (problem->vars + 1) + 2 * problem->constraints;
+    tabular->rows = 1 + problem->vars + (2 * problem->constraints);
 
     allocateGlobalMemory(tabular);
 
     tabular->indicatorsVector = tabular->table;
-    tabular->constraintsMatrix = (TYPE*)((char*)tabular->table + tabular->pitch);
+    tabular->constraintsMatrix = ROW(tabular->table, 1, tabular->pitch);
 
     return tabular;
 }
