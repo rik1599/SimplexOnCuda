@@ -4,7 +4,7 @@
 
 #include <stdlib.h>
 
-#define MINIMUM_GENERATION 0
+#define MINIMUM_GENERATION 1
 #define MAXIMUM_GENERATION +1000
 
 
@@ -103,7 +103,7 @@ problem_t* generateRandomProblem(int width, int height, int seed)
                                                 MAXIMUM_GENERATION);
 
     //sincronizziamo tutti gli stream
-    cudaDeviceSynchronize();
+    HANDLE_KERNEL_ERROR();
 
     HANDLE_ERROR(cudaStreamDestroy(*streamMatrice));
     HANDLE_ERROR(cudaStreamDestroy(*streamKnownTermsVector));

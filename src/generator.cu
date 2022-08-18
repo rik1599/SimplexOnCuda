@@ -144,7 +144,6 @@ void runMatrixGenerationKernel(TYPE *dev_ptr, int width, int height, size_t pitc
                   grid2D.y <= GRID_2D_MAX_Y ? grid2D.y : GRID_2D_MAX_Y);
 
     generateMatrix<<<grid2D, block2D, 0, stream ? *stream : 0>>>(dev_ptr, height, width, pitch, seed, minimum, maximum); // se non si passa uno stream utilizza quello 0, quindi quello default
-    HANDLE_KERNEL_ERROR();
 }
 
 void runVectorGenerationKernel(TYPE *dev_ptr, int size, unsigned long long seed, cudaStream_t *stream, double minimum, double maximum)
@@ -153,5 +152,4 @@ void runVectorGenerationKernel(TYPE *dev_ptr, int size, unsigned long long seed,
     int gridSize = (size + blockSize - 1) / blockSize;
     gridSize = gridSize < LINEAR_GRID_MAX ? gridSize : LINEAR_GRID_MAX; // il grid stride si occupa del secondo caso
     generateVector<<<gridSize, blockSize, 0, stream ? *stream : 0>>>(dev_ptr, size, seed, minimum, maximum);
-    HANDLE_KERNEL_ERROR();
 }

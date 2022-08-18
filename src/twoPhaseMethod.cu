@@ -134,6 +134,29 @@ __global__ void createCoefficientVector(TYPE* firstRow, int baseSize, int* base,
     } 
 }
 
+/*
+ * Genera in parallelo il vettore della soluzione nella memoria device
+ */
+__global__ void getSolution(TYPE* source, int* base, int baseSize, TYPE* out){
+    for(int idX = threadIdx.x + blockIdx.x * blockDim.x; idX<baseSize; idX += gridDim.x*blockDim.x){
+        out[base[idX]] = source[idX];
+    } 
+}
+
+/*
+ * Dato un valore minimo ed un valore massimo controlla se nel vettore in input ce ne è uno compreso
+ * (min <= x < max)
+ */
+__global__ void checkVector(int* vector, int size, int min, int max, int *out){
+    for(int idX = threadIdx.x + blockIdx.x * blockDim.x; idX<size; idX += gridDim.x*blockDim.x){
+       if(vector[idX] < max && vector[idX] >= min){
+            atomicAdd(out, 1);
+       }
+    } 
+}
+
+
+
 /**
  * Esprimo la funzione obiettivo in termini delle variabili non di base (vedi es. istogramma)
  */
@@ -266,6 +289,34 @@ void fillTableu(tabular_t* tabular, int* base){
     HANDLE_ERROR(cudaStreamDestroy(*sixthStream));
 }
 
+/**
+ * Controlla se il problema è degenere
+ * @return DEGENERATE se degenere, FEASIBLE altrimenti
+ */
+int checkIfDegenerate(tabular_t *tabular, int* base){
+    
+    int *checkDegenere_h, *checkDegenere_map;
+    HANDLE_ERROR(cudaHostAlloc(&checkDegenere_h, sizeof(int), cudaHostAllocMapped));
+    HANDLE_ERROR(cudaHostGetDevicePointer(&checkDegenere_map, checkDegenere_h, 0));
+    HANDLE_ERROR(cudaMemset((void *) checkDegenere_map, 0, sizeof(int)));
+
+    int linearBlockSize = 512;
+    int linearGridSize = (tabular->cols + (linearBlockSize-1)) / linearBlockSize;
+
+    checkVector<<<linearGridSize, linearBlockSize>>>(base, 
+                                                        tabular->cols,
+                                                        (tabular->problem->vars) + (tabular->cols), 
+                                                        ((tabular->problem->vars) + 2 * (tabular->cols)),
+                                                        checkDegenere_map);
+    HANDLE_KERNEL_ERROR();
+
+    //come si libera la memoria Mapped???
+
+    if(*checkDegenere_h > 0){
+        return DEGENERATE;
+    }
+    return FEASIBLE;
+}
 
 /**
  * Passaggi per la fase 1 
@@ -288,7 +339,7 @@ int phase1(tabular_t* tabular, int* base)
     #if DEBUG
         FILE* file = fopen("debugPhase1.txt", "w");
 
-        fprintf(file, "\n\n\nTableu nella situazione iniziale\n\n\n");
+        fprintf(file, "\n\n\nTableu nella situazione iniziale\n");
 
         printTableauToStream(file, tabular);
 
@@ -315,7 +366,7 @@ int phase1(tabular_t* tabular, int* base)
     updateObjectiveFunction(tabular, base);
 
     #if DEBUG
-        fprintf(file, "\n\n\nTableu dopo l'eliminazione di gauss\n\n\n");
+        fprintf(file, "\n\n\nTableu dopo l'eliminazione di gauss\n");
         printTableauToStream(file, tabular);
     #endif
     
@@ -328,7 +379,7 @@ int phase1(tabular_t* tabular, int* base)
     }
 
     #if DEBUG
-        fprintf(file, "\n\n\nTableu dopo il lancio del primo solver\n\n\n");
+        fprintf(file, "\n\n\nTableu dopo il lancio del primo solver\n");
         printTableauToStream(file, tabular);
         fclose(file);
     #endif
@@ -337,17 +388,19 @@ int phase1(tabular_t* tabular, int* base)
      * Fase 4: controllo infattibilità
      */
 
-    //TODO
-
-    //if(controlloInfattibilità == true){
-        //return INFEASIBLE;
-    //}
+    TYPE firstKnownTermsValue;
+    HANDLE_ERROR(cudaMemcpy((void*) &firstKnownTermsValue, tabular->costsVector, BYTE_SIZE(1), cudaMemcpyDeviceToHost));
+    if(firstKnownTermsValue < 0){
+        return INFEASIBLE;
+    }
 
     /**
-     * Fase 5: controllo degenere
+     * Fase 5: controllo degenere: se è presente in base un valore x tale che n+m <= x < n+2m, il problema è degenere
      */
 
-    //TODO
+    if(checkIfDegenerate(tabular, base) == DEGENERATE){ //forse possiamo collassare il tutto in check if degenerate
+        return DEGENERATE; 
+    }    
 
     /**
      * Fase 6: ritorno lo stato del problema (non chiamiamo direttamente phase2)
@@ -374,14 +427,14 @@ int phase2(tabular_t* tabular, int* base)
      * Fase 1: riduzione del numero di colonne
     */
 
-    tabular->rows -= tabular->cols; //tabular->cols è m (?)
+    tabular->rows -= tabular->cols;
    
     #if DEBUG
         FILE* file = fopen("debugPhase2.txt", "w");
-        fprintf(file, "\n\n\nTableu dopo aggiornamento colonne in phase2\n\n\n");
+        fprintf(file, "\n\n\nTableu dopo aggiornamento colonne in phase2\n");
         printTableauToStream(file, tabular);
 
-        int* host_base = (int*) malloc(sizeof(int) * tabular->cols);
+        int* host_base = (int*) malloc(sizeof(int) * tabular->cols); //se avessimo il puntatore alla base in host allora potremmo non dover fare questo lavoro
         HANDLE_ERROR(cudaMemcpy(
             host_base,
             base,
@@ -407,7 +460,7 @@ int phase2(tabular_t* tabular, int* base)
     HANDLE_ERROR(cudaStreamCreate(secondStream));
 
 
-    //usiamo un solo stream per memsetAsync, magari ragionare se conviene cambiare
+    //usiamo un solo stream per memsetAsync, converrebbe fare con 3?
     HANDLE_ERROR(cudaMemsetAsync(tabular->costsVector, 0, BYTE_SIZE(1), *firstStream)); //primo elemento del vettore dei costi a 0
     HANDLE_ERROR(cudaMemsetAsync(tabular->costsVector + (1 + tabular->problem->vars), 0, BYTE_SIZE(tabular->cols), *firstStream)); //ultimi m elementi a 0
 
@@ -424,7 +477,7 @@ int phase2(tabular_t* tabular, int* base)
     HANDLE_ERROR(cudaStreamDestroy(*secondStream));
 
     #if DEBUG
-        fprintf(file, "\n\n\nTableu dopo riempimento fuznione obiettivo in phase2\n\n\n");
+        fprintf(file, "\n\n\nTableu dopo riempimento funzione obiettivo in phase2\n");
         printTableauToStream(file, tabular);
     #endif
 
@@ -432,10 +485,10 @@ int phase2(tabular_t* tabular, int* base)
      *  Fase 3: Eliminazione di gauss per esprimere la funzione obiettivo in termini delle variabili non di base
     */
 
-    //updateObjectiveFunction(tabular, base);
+    updateObjectiveFunction(tabular, base);
 
     #if DEBUG
-        fprintf(file, "\n\n\nTableu dopo eliminazione di gauss in phase2\n\n\n");
+        fprintf(file, "\n\n\nTableu dopo eliminazione di gauss in phase2\n");
         printTableauToStream(file, tabular);
     #endif
 
@@ -443,6 +496,7 @@ int phase2(tabular_t* tabular, int* base)
      * Fase 4: Esecuzione dell'algoritmo di risoluzione
     */
 
+    //in ogni caso solo un solve viene lanciato
     #if DEBUG
         int esito = solve(tabular, base);
         fprintf(file, "\n\n\nTableu dopo seconda esecuzione del solver\n\n\n");
@@ -462,6 +516,24 @@ __inline__ void unregisterMemory(int* base_h, problem_t* problem)
     HANDLE_ERROR(cudaFreeHost(base_h));
 }
 
+void getSolutionHost(tabular_t *tabular, int *base, TYPE *solution, TYPE* optimalValue){
+    HANDLE_ERROR(cudaMemcpy((void*) optimalValue, tabular->costsVector, BYTE_SIZE(1), cudaMemcpyDeviceToHost));
+
+    TYPE *dev_solution;
+    HANDLE_ERROR(cudaMalloc((void **) dev_solution, BYTE_SIZE(tabular->rows-1)));
+    HANDLE_ERROR(cudaMemset((void *)  dev_solution, 0, BYTE_SIZE(tabular->rows-1)));
+
+    int blockSize = 512;
+    int gridSize = min(((tabular->cols) + (blockSize-1))/blockSize, 1024);
+
+    getSolution<<<gridSize, blockSize>>>(tabular->indicatorsVector, base, tabular->cols, dev_solution);
+    HANDLE_KERNEL_ERROR();
+
+    //qui dipende da cosa passiamo in solution, se è gia alloccata solution ci basta un memcpy, altrimenti anche un malloc, supponiamo sia già alloccata
+    HANDLE_ERROR(cudaMemcpy((void *) solution, dev_solution, BYTE_SIZE(tabular->cols), cudaMemcpyDeviceToHost));
+    HANDLE_ERROR(cudaFree(dev_solution));
+}
+
 int twoPhaseMethod(problem_t* problem, TYPE* solution, TYPE* optimalValue)
 {
     tabular_t* tabular = newTabular(problem);
@@ -469,7 +541,7 @@ int twoPhaseMethod(problem_t* problem, TYPE* solution, TYPE* optimalValue)
     int* base_map;
 
     // Uso memoria di tipo mapped per memorizzare il vettore di base
-    HANDLE_ERROR(cudaHostAlloc(&base_h, tabular->cols * sizeof(int), cudaHostAllocMapped)); //li vettore della base ha dimensione vettore dei vincoli => tabular->cols
+    HANDLE_ERROR(cudaHostAlloc(&base_h, tabular->cols * sizeof(int), cudaHostAllocMapped)); //il vettore della base ha dimensione vettore dei vincoli => tabular->cols
     HANDLE_ERROR(cudaHostGetDevicePointer(&base_map, base_h, 0));
 
     //Registro i vettori del problema come memoria page-locked (per poter utilizzare i trasferimenti paralleli con gli stream)
@@ -496,6 +568,7 @@ int twoPhaseMethod(problem_t* problem, TYPE* solution, TYPE* optimalValue)
     1) tabular->indicatorCol[0] -> valore ottimale della funzione obiettivo
     2) Per ogni variabile di base: solution[base[i]] = tabular->indicatorCol[i], il resto è 0
     */
+    getSolutionHost(tabular, base_map, solution, optimalValue);
 
     unregisterMemory(base_h, problem);
     return result;
