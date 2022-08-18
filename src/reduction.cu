@@ -78,6 +78,38 @@ __global__ void deviceReduceKernel(TYPE* g_values, unsigned int* g_index, int N)
     }
 }
 
+template <bool isFirstExecution>
+__global__ void deviceReduceKernel(TYPE* knownTerms, TYPE* rowPivot, unsigned int* g_index, int N)
+{
+    TYPE minVal = INT_MAX * 1.0;
+    int minIndex = -1;
+
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x; 
+        i < N; 
+        i += blockDim.x * gridDim.x
+    )
+    {
+        TYPE candidate = knownTerms[i]/rowPivot[i];
+        if (candidate < minVal)
+        {
+            minVal = candidate;
+
+            if (isFirstExecution)
+                minIndex = i;
+            else
+                minIndex = g_index[i];
+        }
+    }
+
+    blockReduceMin(&minVal, &minIndex);
+
+    if (threadIdx.x == 0)
+    {
+        knownTerms[blockIdx.x] = minVal;
+        g_index[blockIdx.x] = minIndex;
+    }
+}
+
 TYPE minElement(TYPE* g_vet, unsigned int size, unsigned int* outIndex)
 {
     unsigned int* g_index;
@@ -88,9 +120,31 @@ TYPE minElement(TYPE* g_vet, unsigned int size, unsigned int* outIndex)
     {
         deviceReduceKernel<false><<<1, 1024>>>(g_vet, g_index, BL(size));
     }
+    HANDLE_KERNEL_ERROR();
 
     TYPE parallelMin;
     HANDLE_ERROR(cudaMemcpy(&parallelMin, g_vet, sizeof(int), cudaMemcpyDefault));
+    HANDLE_ERROR(cudaMemcpy(outIndex, g_index, sizeof(int), cudaMemcpyDefault));
+
+    cudaFree(g_index);
+
+    return parallelMin;
+}
+
+TYPE minElement(TYPE* knownTerms, TYPE* rowPivot, unsigned int size, unsigned int* outIndex)
+{
+    unsigned int* g_index;
+    HANDLE_ERROR(cudaMalloc((void**)&g_index, BL(size) * sizeof(unsigned int)));
+
+    deviceReduceKernel<true><<<BL(size), THREADS>>>(knownTerms, rowPivot, g_index, BL(size));
+    if (BL(size) > 1)
+    {
+        deviceReduceKernel<false><<<1, 1024>>>(knownTerms, rowPivot, g_index, BL(size));
+    }
+    HANDLE_KERNEL_ERROR();
+
+    TYPE parallelMin;
+    HANDLE_ERROR(cudaMemcpy(&parallelMin, knownTerms, sizeof(int), cudaMemcpyDefault));
     HANDLE_ERROR(cudaMemcpy(outIndex, g_index, sizeof(int), cudaMemcpyDefault));
 
     cudaFree(g_index);
@@ -178,6 +232,12 @@ bool isLessThanZero(TYPE* g_vet, unsigned int size)
     HANDLE_ERROR(cudaMemcpy(g_vetCpy, g_vet, size, cudaMemcpyDefault));
 
     deviceReduceBlockAtomicKernel<false><<<BL(size), THREADS>>>(g_vetCpy, size);
+    if (BL(size) > 1)
+    {
+        deviceReduceBlockAtomicKernel<false><<<1, 1024>>>(g_vetCpy, size);
+    }
+    HANDLE_KERNEL_ERROR();
+
     TYPE maximum = *g_vetCpy;
     HANDLE_ERROR(cudaFree(g_vetCpy));
     

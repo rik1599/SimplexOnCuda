@@ -11,7 +11,7 @@
  * @param cols - colonne della matrice
  * @param pitch - il pitch della matrice
  */
-__global__ void fillMatrix(TYPE* mat, int rows, int cols, size_t pitch)
+__global__ void fillMatrix(TYPE* mat, int cols, size_t pitch)
 {
     int idX = threadIdx.x + blockIdx.x * blockDim.x;
     int step = gridDim.x * blockDim.x;
@@ -135,7 +135,10 @@ __global__ void gaussianEliminationNaive(TYPE* mat, TYPE* objectiveFunction, TYP
  */
 __global__ void createCoefficientVector(TYPE* firstRow, int baseSize, int* base, TYPE* coefficients)
 {
-    for(int idX = threadIdx.x + blockIdx.x * blockDim.x; idX<baseSize; idX += gridDim.x*blockDim.x){
+    int idX = threadIdx.x + blockIdx.x * blockDim.x;
+    int step = gridDim.x*blockDim.x;
+
+    for(; idX<baseSize; idX += step){
         coefficients[idX] = firstRow[base[idX]]; 
     } 
 }
@@ -172,10 +175,11 @@ void updateObjectiveFunction(tabular_t* tabular, int* base)
     TYPE* coefficientVector;
     HANDLE_ERROR(cudaMalloc((void**) &coefficientVector, BYTE_SIZE(tabular->cols)));
     
-    int linearBlockSize = 1024;
-    int linearGridSize = (tabular->cols + (linearBlockSize - 1)) / linearBlockSize;
-
-    createCoefficientVector<<<linearGridSize, linearBlockSize>>>(tabular->costsVector + 1, tabular->cols, base, coefficientVector);
+    createCoefficientVector<<<BL(tabular->cols), THREADS>>>(
+                                            tabular->costsVector + 1,
+                                            tabular->cols,
+                                            base,
+                                            coefficientVector);
     HANDLE_KERNEL_ERROR();
 
     //adesso abbiamo il vettore dei coefficienti, possiamo eseguire l'algoritmo di gauss
@@ -183,6 +187,7 @@ void updateObjectiveFunction(tabular_t* tabular, int* base)
     dim3 block = dim3(32,32);
     dim3 grid = dim3(1,
                      (tabular->rows + (block.y - 1))/block.y);
+                     
     gaussianElimination<<<grid, block>>>(tabular->table,
                                             tabular->costsVector,
                                             coefficientVector,
@@ -238,7 +243,7 @@ void fillTableu(tabular_t* tabular, int* base){
         BYTE_SIZE(tabular->problem->constraints),   //pitch della fonte
         BYTE_SIZE(tabular->problem->constraints),   //larghezza matrice
         tabular->problem->vars,                     //altezza matrice
-        cudaMemcpyHostToDevice,                     //tipo
+        cudaMemcpyDefault,                     //tipo
         thirdStream                                 //stream
     ));                             
 
@@ -250,7 +255,6 @@ void fillTableu(tabular_t* tabular, int* base){
 
     fillMatrix<<<BL(tabular->cols), THREADS, 0, fourthStream>>>(
             ROW(tabular->constraintsMatrix, tabular->problem->vars, tabular->pitch),
-            2 * tabular->cols,          //la matrice dei vincoli ha righe rowa-1 (rows conta anche la prima riga)
             tabular->cols,              //colonne della matrice
             tabular->pitch              //pitch
     );
@@ -258,36 +262,34 @@ void fillTableu(tabular_t* tabular, int* base){
     /**
     * Punto 6: copia del vettore dei termini noti nel vettore degli indicatori (cudaMemcpyAsync)
     */
-    cudaStream_t *fifthStream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
-    HANDLE_ERROR(cudaStreamCreate(fifthStream));
+    cudaStream_t fifthStream;
+    HANDLE_ERROR(cudaStreamCreate(&fifthStream));
     HANDLE_ERROR(cudaMemcpyAsync(tabular->indicatorsVector,                     //puntatore al vettore destinazione (vettore indicatori)
                                     tabular->problem->knownTermsVector,         //fonte
                                     BYTE_SIZE(tabular->problem->constraints),   //dimensione in byte del vettore
-                                    cudaMemcpyHostToDevice,                     //tipo
-                                    *fifthStream));                             //stream
+                                    cudaMemcpyDefault,                     //tipo
+                                    fifthStream));                             //stream
 
     /**
     * Punto 7: riempimento vettore della base con numeri progressivi da n+m a n+2m-1 (kernel)
     */
-
-    cudaStream_t *sixthStream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
-    HANDLE_ERROR(cudaStreamCreate(sixthStream));
+    cudaStream_t sixthStream;
+    HANDLE_ERROR(cudaStreamCreate(&sixthStream));
     
-    linearBlockSize = 512;
-    linearGridSize = (tabular->cols + (linearBlockSize-1)) / linearBlockSize; //in teoria la base è lunga cols
-
-    fillBaseVector<<<linearGridSize, linearBlockSize, 0, *sixthStream>>>(base,
-                                                                            tabular->cols,
-                                                                            tabular->problem->vars + tabular->problem->constraints);
+    fillBaseVector<<<BL(tabular->cols), THREADS, 0, sixthStream>>>(
+                                                                base,
+                                                                tabular->cols,
+                                                                tabular->problem->vars + tabular->problem->constraints);
+    
     HANDLE_KERNEL_ERROR();
 
     //distruggiamo gli stream
-    HANDLE_ERROR(cudaStreamDestroy(*firstStream));
-    HANDLE_ERROR(cudaStreamDestroy(*secondStream));
-    HANDLE_ERROR(cudaStreamDestroy(*thirdStream));
-    HANDLE_ERROR(cudaStreamDestroy(*fourthStream));
-    HANDLE_ERROR(cudaStreamDestroy(*fifthStream));
-    HANDLE_ERROR(cudaStreamDestroy(*sixthStream));
+    HANDLE_ERROR(cudaStreamDestroy(firstStream));
+    HANDLE_ERROR(cudaStreamDestroy(secondStream));
+    HANDLE_ERROR(cudaStreamDestroy(thirdStream));
+    HANDLE_ERROR(cudaStreamDestroy(fourthStream));
+    HANDLE_ERROR(cudaStreamDestroy(fifthStream));
+    HANDLE_ERROR(cudaStreamDestroy(sixthStream));
 }
 
 /**
@@ -375,9 +377,7 @@ int phase1(tabular_t* tabular, int* base)
      * Fase 3: lancio del solver
      */
 
-    if(solve(tabular, base) != FEASIBLE){ //se unbounded torniamo al chiamante
-        return UNBOUNDED;
-    }
+    solve(tabular, base);
 
     #ifdef DEBUG
         fprintf(file, "\n\n\nTableu dopo il lancio del primo solver\n");

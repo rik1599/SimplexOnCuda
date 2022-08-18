@@ -11,6 +11,8 @@
 */
 TYPE minElement(TYPE* g_vet, unsigned int size, unsigned int* outIndex);
 
+TYPE minElement(TYPE* knownTerms, TYPE* rowPivot, unsigned int size, unsigned int* outIndex);
+
 /** Stabilisce se un vettore ha tutti i valori >= 0 utilizzando il metodo della full reduction
  * 
  * @param g_vet - vettore di valori in memoria globale
