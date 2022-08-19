@@ -99,7 +99,7 @@ __global__ void gaussianElimination(TYPE *mat, TYPE *objectiveFunction, TYPE *co
 
             if (threadIdx.x == 0)
             {
-                atomicAdd(&objectiveFunction[idY], -1 * value);
+                atomicAdd(&objectiveFunction[idY], -value);
             }
         }
     }
@@ -124,9 +124,9 @@ __global__ void gaussianEliminationNaive(TYPE *mat, TYPE *objectiveFunction, TYP
     {
         for (int idY = threadIdx.y + blockIdx.y * blockDim.y; idY < rows; idY += gridDim.y * blockDim.y)
         {
-            atomicAdd(&objectiveFunction[idY], -1 * (idX + blockDim.x < cols ? ((*(INDEX(mat, idY, idX, pitch)) * coefficients[idX]) +
-                                                                                (*(INDEX(mat, idY, (idX + blockDim.x), pitch))) * coefficients[idX + blockDim.x])
-                                                                             : (*(INDEX(mat, idY, idX, pitch))) * coefficients[idX]));
+            atomicAdd(&objectiveFunction[idY], -(idX + blockDim.x < cols ? ((*(INDEX(mat, idY, idX, pitch)) * coefficients[idX]) +
+                                                                            (*(INDEX(mat, idY, (idX + blockDim.x), pitch))) * coefficients[idX + blockDim.x])
+                                                                         : (*(INDEX(mat, idY, idX, pitch))) * coefficients[idX]));
         }
     }
 }
@@ -307,7 +307,7 @@ void fillTableu(tabular_t *tabular, int *base)
     HANDLE_ERROR(cudaStreamDestroy(sixthStream));
 }
 
-//TODO: esiste una versione migliore?
+// TODO: esiste una versione migliore?
 /**
  * Controlla se il problema è degenere
  * @return DEGENERATE se degenere, FEASIBLE altrimenti
@@ -567,7 +567,7 @@ int twoPhaseMethod(problem_t *problem, TYPE *solution, TYPE *optimalValue)
         unregisterMemory(base_h, problem);
         return result;
     }
-    
+
     getSolutionHost(tabular, base_map, solution, optimalValue);
 
     unregisterMemory(base_h, problem);
