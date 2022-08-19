@@ -1,5 +1,6 @@
 #include "reduction.cuh"
 #include "error.cuh"
+#include "stdio.h"
 
 #define THREADS 512
 #define BL(N) min((N + THREADS - 1) / THREADS, 1024)
@@ -37,7 +38,7 @@ __inline__ __device__ void blockReduceMin(volatile TYPE *pVal, volatile int *pIn
 
     __syncthreads();
 
-    *pVal = (threadIdx.x < blockDim.x / warpSize) ? sdata[lane] : INT_MAX;
+    *pVal = (threadIdx.x < blockDim.x / warpSize) ? sdata[lane] : INT_MAX * 1.0;
     *pIndex = (threadIdx.x < blockDim.x / warpSize) ? sindex[lane] : -1;
 
     if (wid == 0)
@@ -115,18 +116,23 @@ TYPE minElement(TYPE* g_vet, unsigned int size, unsigned int* outIndex)
     unsigned int* g_index;
     HANDLE_ERROR(cudaMalloc((void**)&g_index, BL(size) * sizeof(unsigned int)));
 
-    deviceReduceKernel<true><<<BL(size), THREADS>>>(g_vet, g_index, size);
+    TYPE* g_vetCpy;
+    HANDLE_ERROR(cudaMalloc((void**)&g_vetCpy, BYTE_SIZE(size)));
+    HANDLE_ERROR(cudaMemcpy(g_vetCpy, g_vet, BYTE_SIZE(size), cudaMemcpyDefault));
+
+    deviceReduceKernel<true><<<BL(size), THREADS>>>(g_vetCpy, g_index, size);
     if (BL(size) > 1)
     {
-        deviceReduceKernel<false><<<1, 1024>>>(g_vet, g_index, BL(size));
+        deviceReduceKernel<false><<<1, 1024>>>(g_vetCpy, g_index, BL(size));
     }
     HANDLE_KERNEL_ERROR();
 
     TYPE parallelMin;
-    HANDLE_ERROR(cudaMemcpy(&parallelMin, g_vet, sizeof(int), cudaMemcpyDefault));
+    HANDLE_ERROR(cudaMemcpy(&parallelMin, g_vetCpy, BYTE_SIZE(1), cudaMemcpyDefault));
     HANDLE_ERROR(cudaMemcpy(outIndex, g_index, sizeof(int), cudaMemcpyDefault));
 
-    cudaFree(g_index);
+    HANDLE_ERROR(cudaFree(g_index));
+    HANDLE_ERROR(cudaFree(g_vetCpy));
 
     return parallelMin;
 }
@@ -136,44 +142,44 @@ TYPE minElement(TYPE* knownTerms, TYPE* rowPivot, unsigned int size, unsigned in
     unsigned int* g_index;
     HANDLE_ERROR(cudaMalloc((void**)&g_index, BL(size) * sizeof(unsigned int)));
 
-    deviceReduceKernel<true><<<BL(size), THREADS>>>(knownTerms, rowPivot, g_index, BL(size));
+    TYPE* knownTermsCpy;
+    HANDLE_ERROR(cudaMalloc((void**)&knownTermsCpy, BYTE_SIZE(size)));
+    HANDLE_ERROR(cudaMemcpy(knownTermsCpy, knownTerms, BYTE_SIZE(size), cudaMemcpyDefault));
+
+    deviceReduceKernel<true><<<BL(size), THREADS>>>(knownTermsCpy, rowPivot, g_index, BL(size));
     if (BL(size) > 1)
     {
-        deviceReduceKernel<false><<<1, 1024>>>(knownTerms, rowPivot, g_index, BL(size));
+        deviceReduceKernel<false><<<1, 1024>>>(knownTermsCpy, rowPivot, g_index, BL(size));
     }
     HANDLE_KERNEL_ERROR();
 
     TYPE parallelMin;
-    HANDLE_ERROR(cudaMemcpy(&parallelMin, knownTerms, sizeof(int), cudaMemcpyDefault));
+    HANDLE_ERROR(cudaMemcpy(&parallelMin, knownTermsCpy, BYTE_SIZE(1), cudaMemcpyDefault));
     HANDLE_ERROR(cudaMemcpy(outIndex, g_index, sizeof(int), cudaMemcpyDefault));
 
-    cudaFree(g_index);
+    HANDLE_ERROR(cudaFree(g_index));
+    HANDLE_ERROR(cudaFree(knownTermsCpy));
 
     return parallelMin;
 }
 
-// ============ reduction with atomic ====================
-template <bool minimum>
-__inline__ __device__ void warpReduce(volatile TYPE *pVal)
+// ============ max value-only ====================
+__inline__ __device__ void warpReduceMax(volatile TYPE *pVal)
 {
-    for (int offset = warpSize/2; offset > 0; offset /= 2)
-    {   
-        if (minimum)
-            *pVal = min(*pVal, __shfl_down_sync(warpSize - 1, *pVal, offset));
-        else
-            *pVal = max(*pVal, __shfl_down_sync(warpSize - 1, *pVal, offset));
+    for (int offset = warpSize >> 1; offset > 0; offset >>= 1)
+    {
+        *pVal = max(*pVal, __shfl_down_sync(warpSize - 1, *pVal, offset));
     }
 }
 
-template <bool minimum>
-__inline__ __device__ void blockReduce(volatile TYPE *pVal)
+__inline__ __device__ void blockReduceMax(volatile TYPE *pVal)
 {
     static __shared__ TYPE sdata[32];
 
     int lane = threadIdx.x % warpSize;
     int wid = threadIdx.x / warpSize;
 
-    warpReduce<minimum>(pVal);
+    warpReduceMax(pVal);
 
     if (lane == 0)
     {
@@ -182,64 +188,49 @@ __inline__ __device__ void blockReduce(volatile TYPE *pVal)
 
     __syncthreads();
 
-    if (minimum)
-        *pVal = (threadIdx.x < blockDim.x / warpSize) ? sdata[lane] : INT_MAX;
-    else
-        *pVal = (threadIdx.x < blockDim.x / warpSize) ? sdata[lane] : INT_MIN;
+    *pVal = (threadIdx.x < blockDim.x / warpSize) ? sdata[lane] : INT_MIN * 1.0;
 
     if (wid == 0)
     {
-        warpReduce<minimum>(pVal);
+        warpReduceMax(pVal);
     }
 }
 
-template <bool minimum>
-__global__ void deviceReduceBlockAtomicKernel(TYPE* g_data, unsigned int N)
+__global__ void deviceReduceKernel(TYPE* g_values, int N)
 {
-    TYPE partial = minimum ? INT_MAX : INT_MIN;
+    TYPE maxVal = INT_MIN * 1.0;
 
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; 
         i < N; 
         i += blockDim.x * gridDim.x
     )
     {
-        if (minimum)
-            partial = min(partial, g_data[i]);
-        else
-            partial = max(partial, g_data[i]);
+        maxVal = max(maxVal, g_values[i]);
     }
 
-    blockReduce<minimum>(&partial);
+    blockReduceMax(&maxVal);
 
     if (threadIdx.x == 0)
     {
-        if (minimum)
-            atomicMin(g_data, partial);
-        else
-            atomicMax(g_data, partial);
+        g_values[blockIdx.x] = maxVal;
     }
-}
-
-bool isGreaterThanZero(TYPE* g_vet, unsigned int size)
-{
-    return true;
 }
 
 bool isLessThanZero(TYPE* g_vet, unsigned int size)
 {
     TYPE* g_vetCpy;
     HANDLE_ERROR(cudaMalloc((void**)&g_vetCpy, BYTE_SIZE(size)));
-    HANDLE_ERROR(cudaMemcpy(g_vetCpy, g_vet, size, cudaMemcpyDefault));
+    HANDLE_ERROR(cudaMemcpy(g_vetCpy, g_vet, BYTE_SIZE(size), cudaMemcpyDefault));
 
-    deviceReduceBlockAtomicKernel<false><<<BL(size), THREADS>>>(g_vetCpy, size);
+    deviceReduceKernel<<<BL(size), THREADS>>>(g_vetCpy, size);
     if (BL(size) > 1)
     {
-        deviceReduceBlockAtomicKernel<false><<<1, 1024>>>(g_vetCpy, size);
+        deviceReduceKernel<<<1, 1024>>>(g_vetCpy, BL(size));
     }
     HANDLE_KERNEL_ERROR();
 
-    TYPE maximum = *g_vetCpy;
+    TYPE parallelMax;
+    HANDLE_ERROR(cudaMemcpy(&parallelMax, g_vetCpy, BYTE_SIZE(1), cudaMemcpyDefault));
     HANDLE_ERROR(cudaFree(g_vetCpy));
-    
-    return (maximum <= 0);
+    return (parallelMax <= 0);
 }
