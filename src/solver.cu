@@ -52,7 +52,7 @@ __global__ void updateVariables(matrixInfo matInfo, double *colPivot, double *ro
         for (int row = y; row < matInfo.rows; row += ny)
         {
             pRow = (double *)(pMat + row * matInfo.pitch);
-            pRow[col] = col == colPivotIndex ? pRow[col]/pivot : fma(-rowPivot[col]/pivot, colPivot[row], pRow[col]);
+            pRow[col] = col == colPivotIndex ? pRow[col] / pivot : fma(-rowPivot[col] / pivot, colPivot[row], pRow[col]);
         }
     }
 }
@@ -64,7 +64,7 @@ __global__ void updateCostsVector(TYPE *costVector, int size, double *colPivot, 
 
     for (; i < size; i += step)
     {
-        costVector[i] = fma(-costsPivot/pivot, colPivot[i], costVector[i]);
+        costVector[i] = fma(-costsPivot / pivot, colPivot[i], costVector[i]);
     }
 }
 
@@ -105,7 +105,6 @@ int solve(tabular_t *tabular, int *base)
     TYPE minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
     while (compare(minCosts) < 0)
     {
-        printf("minCosts: %lf, index: %d\n", minCosts, rowPivotIndex);
         HANDLE_ERROR(cudaMemcpy(rowPivot, ROW(tabular->constraintsMatrix, rowPivotIndex, tabular->pitch), BYTE_SIZE(tabular->cols), cudaMemcpyDefault));
 
         if (isLessThanZero(rowPivot, tabular->cols))
@@ -114,14 +113,18 @@ int solve(tabular_t *tabular, int *base)
         }
 
         minElement(tabular->indicatorsVector, rowPivot, tabular->cols, &colPivotIndex);
-        printf("colPivotIndex = %d\n", colPivotIndex);
         base[colPivotIndex] = rowPivotIndex;
 
         updateAll(tabular, colPivot, colPivotIndex, rowPivot, minCosts);
 #ifdef DEBUG
         printTableauToStream(stdout, tabular);
-        int i = 0;
-        scanf("%d\n", &i);
+        fprintf(stdout, "Vettore della base\n");
+        for (int i = 0; i < tabular->cols; i++)
+        {
+            fprintf(stdout, "%d\t", base[i]);
+        }
+
+        while(getchar() != '\n');
 #endif
         minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
     }

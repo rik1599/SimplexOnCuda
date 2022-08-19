@@ -349,42 +349,34 @@ int checkIfDegenerate(tabular_t *tabular, int *base)
  *   5) Se è presente in base un valore x tale che n+m <= x < n+2m, il problema è degenere (fare su un kernel?)
  *   6) Proseguo a fase 2
  */
-int phase1(tabular_t *tabular, int *base)
+int phase1(tabular_t *tabular, int *base_h, int* base_dev)
 {
     /**
      * Fase 1: riempimento del tableu
      */
 
-    fillTableu(tabular, base);
+    fillTableu(tabular, base_dev);
 
 #ifdef DEBUG
-    FILE *file = fopen("debugPhase1.txt", "w");
+    //FILE *file = fopen("debugPhase1.txt", "w");
 
     fprintf(stdout, "\n\n\nTableu nella situazione iniziale\n");
 
     printTableauToStream(stdout, tabular);
 
     // printing della base
-    int *host_base = (int *)malloc(sizeof(int) * tabular->cols);
-    HANDLE_ERROR(cudaMemcpy(
-        host_base,
-        base,
-        sizeof(int) * (tabular->cols),
-        cudaMemcpyDeviceToHost));
-
     fprintf(stdout, "Vettore della base\n");
     for (int i = 0; i < tabular->cols; i++)
     {
-        fprintf(stdout, "%d\t", host_base[i]);
+        fprintf(stdout, "%d\t", base_h[i]);
     }
-    free(host_base);
 #endif
 
     /**
      * Fase 2: eliminazione di gauss
      */
 
-    updateObjectiveFunction(tabular, base);
+    updateObjectiveFunction(tabular, base_dev);
 
 #ifdef DEBUG
     fprintf(stdout, "\n\n\nTableu dopo l'eliminazione di gauss\n");
@@ -395,11 +387,16 @@ int phase1(tabular_t *tabular, int *base)
      * Fase 3: lancio del solver
      */
 
-    solve(tabular, base);
+    solve(tabular, base_h);
 
 #ifdef DEBUG
     fprintf(stdout, "\n\n\nTableu dopo il lancio del primo solver\n");
     printTableauToStream(stdout, tabular);
+    fprintf(stdout, "Vettore della base\n");
+    for (int i = 0; i < tabular->cols; i++)
+    {
+        fprintf(stdout, "%d\t", base_h[i]);
+    }
 #endif
 
     /**
@@ -416,7 +413,7 @@ int phase1(tabular_t *tabular, int *base)
     /**
      * Fase 5: controllo degenere: se è presente in base un valore x tale che n+m <= x < n+2m, il problema è degenere
      */
-    return checkIfDegenerate(tabular, base);
+    return checkIfDegenerate(tabular, base_dev);
 }
 
 /**
@@ -431,7 +428,7 @@ int phase1(tabular_t *tabular, int *base)
  * 3) Esprimo la funzione obiettivo in termini delle variabili non di base (vedi es. istogramma)
  * 4) Eseguo l'algoritmo di soluzione fino all'ottimo (file a parte)
  */
-int phase2(tabular_t *tabular, int *base)
+int phase2(tabular_t *tabular, int *base_h, int *base_dev)
 {
     /**
      * Fase 1: riduzione del numero di colonne
@@ -439,23 +436,15 @@ int phase2(tabular_t *tabular, int *base)
     tabular->rows -= tabular->cols;
 
 #ifdef DEBUG
-    FILE *file = fopen("debugPhase2.txt", "w");
-    fprintf(file, "\n\n\nTableu dopo aggiornamento colonne in phase2\n");
-    printTableauToStream(file, tabular);
+    //FILE *file = fopen("debugPhase2.txt", "w");
+    fprintf(stdout, "\n\n\nTableu dopo aggiornamento colonne in phase2\n");
+    printTableauToStream(stdout, tabular);
 
-    int *host_base = (int *)malloc(sizeof(int) * tabular->cols); // se avessimo il puntatore alla base in host allora potremmo non dover fare questo lavoro
-    HANDLE_ERROR(cudaMemcpy(
-        host_base,
-        base,
-        sizeof(int) * (tabular->cols),
-        cudaMemcpyDeviceToHost));
-
-    fprintf(file, "Vettore della base\n");
+    fprintf(stdout, "Vettore della base\n");
     for (int i = 0; i < tabular->cols; i++)
     {
-        fprintf(file, "%d\t", host_base[i]);
+        fprintf(stdout, "%d\t", base_h[i]);
     }
-    free(host_base);
 #endif
 
     /**
@@ -484,19 +473,19 @@ int phase2(tabular_t *tabular, int *base)
     HANDLE_ERROR(cudaStreamDestroy(secondStream));
 
 #ifdef DEBUG
-    fprintf(file, "\n\n\nTableu dopo riempimento funzione obiettivo in phase2\n");
-    printTableauToStream(file, tabular);
+    fprintf(stdout, "\n\n\nTableu dopo riempimento funzione obiettivo in phase2\n");
+    printTableauToStream(stdout, tabular);
 #endif
 
     /**
      *  Fase 3: Eliminazione di gauss per esprimere la funzione obiettivo in termini delle variabili non di base
      */
 
-    updateObjectiveFunction(tabular, base);
+    updateObjectiveFunction(tabular, base_dev);
 
 #ifdef DEBUG
-    fprintf(file, "\n\n\nTableu dopo eliminazione di gauss in phase2\n");
-    printTableauToStream(file, tabular);
+    fprintf(stdout, "\n\n\nTableu dopo eliminazione di gauss in phase2\n");
+    printTableauToStream(stdout, tabular);
 #endif
 
 /**
@@ -505,14 +494,14 @@ int phase2(tabular_t *tabular, int *base)
 
 // in ogni caso solo un solve viene lanciato
 #ifdef DEBUG
-    int esito = solve(tabular, base);
-    fprintf(file, "\n\n\nTableu dopo seconda esecuzione del solver\n\n\n");
-    printTableauToStream(file, tabular);
-    fclose(file);
+    int esito = solve(tabular, base_h);
+    fprintf(stdout, "\n\n\nTableu dopo seconda esecuzione del solver\n\n\n");
+    printTableauToStream(stdout, tabular);
+    //fclose(file);
     return esito;
 #endif
 
-    return solve(tabular, base);
+    return solve(tabular, base_h);
 }
 
 __inline__ void unregisterMemory(int *base_h, problem_t *problem)
@@ -554,14 +543,14 @@ int twoPhaseMethod(problem_t *problem, TYPE *solution, TYPE *optimalValue)
     HANDLE_ERROR(cudaHostRegister(problem->knownTermsVector, BYTE_SIZE(problem->constraints), cudaHostRegisterDefault));
     HANDLE_ERROR(cudaHostRegister(problem->objectiveFunction, BYTE_SIZE(problem->vars), cudaHostRegisterDefault));
 
-    int result = phase1(tabular, base_map);
+    int result = phase1(tabular, base_h, base_map);
     if (result != FEASIBLE)
     {
         unregisterMemory(base_h, problem);
         return result;
     }
 
-    result = phase2(tabular, base_map);
+    result = phase2(tabular, base_h, base_map);
     if (result != FEASIBLE)
     {
         unregisterMemory(base_h, problem);

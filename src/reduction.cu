@@ -12,7 +12,7 @@ __inline__ __device__ void warpReduceMin(volatile TYPE *pVal, volatile int *pInd
     {
         TYPE shflVal = __shfl_down_sync(warpSize - 1, *pVal, offset);
         int shfIndex = __shfl_down_sync(warpSize - 1, *pIndex, offset);
-        if (shflVal < *pVal)
+        if (compare(shflVal, *pVal) < 0)
         {
             *pVal = shflVal;
             *pIndex = shfIndex;
@@ -59,7 +59,7 @@ __global__ void deviceReduceKernel(TYPE* g_values, unsigned int* g_index, int N)
     )
     {
         TYPE candidate = g_values[i];
-        if (candidate < minVal)
+        if (compare(candidate, minVal) < 0)
         {
             minVal = candidate;
 
