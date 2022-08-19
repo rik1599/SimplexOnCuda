@@ -79,38 +79,6 @@ __global__ void deviceReduceKernel(TYPE* g_values, unsigned int* g_index, int N)
     }
 }
 
-template <bool isFirstExecution>
-__global__ void deviceReduceKernel(TYPE* knownTerms, TYPE* rowPivot, unsigned int* g_index, int N)
-{
-    TYPE minVal = INT_MAX * 1.0;
-    int minIndex = -1;
-
-    for (int i = blockIdx.x * blockDim.x + threadIdx.x; 
-        i < N; 
-        i += blockDim.x * gridDim.x
-    )
-    {
-        TYPE candidate = knownTerms[i]/rowPivot[i];
-        if (candidate < minVal)
-        {
-            minVal = candidate;
-
-            if (isFirstExecution)
-                minIndex = i;
-            else
-                minIndex = g_index[i];
-        }
-    }
-
-    blockReduceMin(&minVal, &minIndex);
-
-    if (threadIdx.x == 0)
-    {
-        knownTerms[blockIdx.x] = minVal;
-        g_index[blockIdx.x] = minIndex;
-    }
-}
-
 TYPE minElement(TYPE* g_vet, unsigned int size, unsigned int* outIndex)
 {
     unsigned int* g_index;
@@ -137,28 +105,41 @@ TYPE minElement(TYPE* g_vet, unsigned int size, unsigned int* outIndex)
     return parallelMin;
 }
 
+__global__ void createIndicatorsVector(TYPE* knownTerms, TYPE* rowPivot, unsigned int N)
+{
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x; 
+        i < N; 
+        i += blockDim.x * gridDim.x
+    )
+    {
+        knownTerms[i] = knownTerms[i] / rowPivot[i];
+    }
+}
+
 TYPE minElement(TYPE* knownTerms, TYPE* rowPivot, unsigned int size, unsigned int* outIndex)
 {
     unsigned int* g_index;
     HANDLE_ERROR(cudaMalloc((void**)&g_index, BL(size) * sizeof(unsigned int)));
 
-    TYPE* knownTermsCpy;
-    HANDLE_ERROR(cudaMalloc((void**)&knownTermsCpy, BYTE_SIZE(size)));
-    HANDLE_ERROR(cudaMemcpy(knownTermsCpy, knownTerms, BYTE_SIZE(size), cudaMemcpyDefault));
+    TYPE* g_vetCpy;
+    HANDLE_ERROR(cudaMalloc((void**)&g_vetCpy, BYTE_SIZE(size)));
+    HANDLE_ERROR(cudaMemcpy(g_vetCpy, knownTerms, BYTE_SIZE(size), cudaMemcpyDefault));
+    createIndicatorsVector<<<BL(size), THREADS>>>(g_vetCpy, rowPivot, size);
+    HANDLE_KERNEL_ERROR();
 
-    deviceReduceKernel<true><<<BL(size), THREADS>>>(knownTermsCpy, rowPivot, g_index, BL(size));
+    deviceReduceKernel<true><<<BL(size), THREADS>>>(g_vetCpy, g_index, size);
     if (BL(size) > 1)
     {
-        deviceReduceKernel<false><<<1, 1024>>>(knownTermsCpy, rowPivot, g_index, BL(size));
+        deviceReduceKernel<false><<<1, 1024>>>(g_vetCpy, g_index, BL(size));
     }
     HANDLE_KERNEL_ERROR();
 
     TYPE parallelMin;
-    HANDLE_ERROR(cudaMemcpy(&parallelMin, knownTermsCpy, BYTE_SIZE(1), cudaMemcpyDefault));
+    HANDLE_ERROR(cudaMemcpy(&parallelMin, g_vetCpy, BYTE_SIZE(1), cudaMemcpyDefault));
     HANDLE_ERROR(cudaMemcpy(outIndex, g_index, sizeof(int), cudaMemcpyDefault));
 
+    HANDLE_ERROR(cudaFree(g_vetCpy));
     HANDLE_ERROR(cudaFree(g_index));
-    HANDLE_ERROR(cudaFree(knownTermsCpy));
 
     return parallelMin;
 }
@@ -168,7 +149,7 @@ __inline__ __device__ void warpReduceMax(volatile TYPE *pVal)
 {
     for (int offset = warpSize >> 1; offset > 0; offset >>= 1)
     {
-        *pVal = max(*pVal, __shfl_down_sync(warpSize - 1, *pVal, offset));
+        *pVal = fmax(*pVal, __shfl_down_sync(warpSize - 1, *pVal, offset));
     }
 }
 
@@ -205,7 +186,7 @@ __global__ void deviceReduceKernel(TYPE* g_values, int N)
         i += blockDim.x * gridDim.x
     )
     {
-        maxVal = max(maxVal, g_values[i]);
+        maxVal = fmax(maxVal, g_values[i]);
     }
 
     blockReduceMax(&maxVal);
@@ -232,5 +213,5 @@ bool isLessThanZero(TYPE* g_vet, unsigned int size)
     TYPE parallelMax;
     HANDLE_ERROR(cudaMemcpy(&parallelMax, g_vetCpy, BYTE_SIZE(1), cudaMemcpyDefault));
     HANDLE_ERROR(cudaFree(g_vetCpy));
-    return (parallelMax <= 0);
+    return compare(parallelMax) <= 0;
 }
