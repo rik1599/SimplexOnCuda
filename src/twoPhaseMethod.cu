@@ -89,16 +89,14 @@ __global__ void getSolution(TYPE *source, int *base, int baseSize, TYPE *out, in
  * Dato un valore minimo ed un valore massimo controlla se nel vettore in input ce ne è uno compreso
  * (min <= x < max)
  */
-__global__ void checkVector(int *vector, int size, int min, int max, int *out)
+__global__ void countElementsInRange(int *vector, int size, int min, int max, unsigned int *out)
 {
     for (int idX = threadIdx.x + blockIdx.x * blockDim.x;
          idX < size;
          idX += gridDim.x * blockDim.x)
     {
         if (vector[idX] < max && vector[idX] >= min)
-        {
             atomicAdd(out, 1);
-        }
     }
 }
 
@@ -155,30 +153,24 @@ void fillTableu(tabular_t *tabular, int *base)
         HANDLE_ERROR(cudaStreamDestroy(streams[i]));
 }
 
-// TODO: esiste una versione migliore?
 /**
  * Controlla se il problema è degenere
  * @return DEGENERATE se degenere, FEASIBLE altrimenti
  */
-int checkIfDegenerate(tabular_t *tabular, int *base)
+int checkDegeneracy(int *base, int size, int firstArtificial, int endArtificial)
 {
-    int *checkDegenere_h, *checkDegenere_map;
-    HANDLE_ERROR(cudaHostAlloc(&checkDegenere_h, sizeof(int), cudaHostAllocMapped));
-    HANDLE_ERROR(cudaHostGetDevicePointer(&checkDegenere_map, checkDegenere_h, 0));
-    HANDLE_ERROR(cudaMemset(checkDegenere_map, 0, sizeof(int)));
+    unsigned int *out;
+    HANDLE_ERROR(cudaMalloc((void **)&out, sizeof(unsigned int)));
+    HANDLE_ERROR(cudaMemset(out, 0, sizeof(unsigned int)));
 
-    checkVector<<<BL(tabular->cols), THREADS>>>(
-        base,
-        tabular->cols,
-        tabular->problem->vars + tabular->cols,
-        tabular->problem->vars + 2 * tabular->cols,
-        checkDegenere_map);
-    HANDLE_KERNEL_ERROR();
+    countElementsInRange<<<BL(size), THREADS>>>(base, size, firstArtificial, endArtificial, out);
 
-    int checkDegenere = *checkDegenere_h;
-    HANDLE_ERROR(cudaFreeHost(checkDegenere_h));
+    int result;
+    HANDLE_ERROR(cudaMemcpy(&result, out, sizeof(unsigned int), cudaMemcpyDefault));
 
-    if (checkDegenere > 0)
+    HANDLE_ERROR(cudaFree(out));
+
+    if (result > 0)
         return DEGENERATE;
     else
         return FEASIBLE;
@@ -214,7 +206,11 @@ int phase1(tabular_t *tabular, int *base_h, int *base_dev)
         return INFEASIBLE;
 
     // Fase 5: controllo degenere: se è presente in base un valore x tale che n+m <= x < n+2m, il problema è degenere
-    return checkIfDegenerate(tabular, base_dev);
+    return checkDegeneracy(
+        base_dev,
+        tabular->cols,
+        tabular->problem->vars + tabular->problem->constraints,
+        tabular->problem->vars + 2 * tabular->problem->constraints);
 }
 
 int phase2(tabular_t *tabular, int *base_h, int *base_dev)
@@ -245,8 +241,7 @@ int phase2(tabular_t *tabular, int *base_h, int *base_dev)
         BYTE_SIZE(tabular->problem->vars),
         cudaMemcpyDefault,
         streams[1]));
-    negateVector<<<BL(tabular->problem->vars), THREADS, 0, streams[1]>>>
-        (tabular->costsVector + 1, tabular->problem->vars);
+    negateVector<<<BL(tabular->problem->vars), THREADS, 0, streams[1]>>>(tabular->costsVector + 1, tabular->problem->vars);
     HANDLE_KERNEL_ERROR();
 
     for (size_t i = 0; i < 2; i++)
@@ -292,8 +287,7 @@ void getSolutionHost(tabular_t *tabular, int *base, TYPE *solution, TYPE *optima
     HANDLE_ERROR(cudaHostGetDevicePointer(&dev_solution, solution, 0));
     HANDLE_ERROR(cudaMemset(dev_solution, 0, BYTE_SIZE(tabular->problem->vars)));
 
-    getSolution<<<BL(tabular->cols), THREADS>>>
-        (tabular->knownTermsVector, base, tabular->cols, dev_solution, tabular->problem->vars);
+    getSolution<<<BL(tabular->cols), THREADS>>>(tabular->knownTermsVector, base, tabular->cols, dev_solution, tabular->problem->vars);
     HANDLE_KERNEL_ERROR();
 
     HANDLE_ERROR(cudaHostUnregister(solution));
