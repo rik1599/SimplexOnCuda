@@ -60,7 +60,7 @@ cudaStream_t *generateMatrixInParallelAsync(TYPE *dst, int width, int height, un
         height                // l'altezza, dato che linearizzata per colonne è il numero di variabili
         ));
 
-    generateMatrixLinear<<<BL(width), THREADS, 0, stream ? *stream : 0>>>(dev_matrix, height, width, pitch, seed, minimum, maximum); // se non si passa uno stream utilizza quello 0, quindi quello default
+    generateMatrixLinear<<<BL(width), THREADS, 0, *stream>>>(dev_matrix, height, width, pitch, seed, minimum, maximum); // se non si passa uno stream utilizza quello 0, quindi quello default
 
     HANDLE_ERROR(cudaMemcpy2DAsync(
         dst,
