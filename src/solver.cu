@@ -69,18 +69,19 @@ __inline__ void updateAll(tabular_t *tabular, TYPE *colPivot, int colPivotIndex,
     HANDLE_ERROR(cudaMemcpy(&pivot, rowPivot + colPivotIndex, BYTE_SIZE(1), cudaMemcpyDefault));
 
     cudaStream_t streams[2];
+    for (size_t i = 0; i < 2; i++)
+        HANDLE_ERROR(cudaStreamCreate(streams + i));
+
     dim3 block(TILE_DIM, TILE_DIM);
     dim3 grid(BLOCK_DIM(tabular->cols), BLOCK_DIM(tabular->rows));
-    cudaStreamCreate(&streams[0]);
     updateVariables<<<grid, block, 0, streams[0]>>>(matInfo, colPivot, rowPivot, colPivotIndex, pivot);
 
-    cudaStreamCreate(&streams[1]);
     updateCostsVector<<<BL(tabular->rows), THREADS, 0, streams[1]>>>(tabular->costsVector, tabular->rows, colPivot, minCosts, pivot);
 
     HANDLE_KERNEL_ERROR();
 
-    cudaStreamDestroy(streams[0]);
-    cudaStreamDestroy(streams[1]);
+    for (size_t i = 0; i < 2; i++)
+        HANDLE_ERROR(cudaStreamDestroy(streams[i]));
 }
 
 int solve(tabular_t *tabular, int *base)
@@ -98,20 +99,20 @@ int solve(tabular_t *tabular, int *base)
         HANDLE_ERROR(cudaMemcpy(rowPivot, ROW(tabular->constraintsMatrix, rowPivotIndex, tabular->pitch), BYTE_SIZE(tabular->cols), cudaMemcpyDefault));
 
         if (isLessThanZero(rowPivot, tabular->cols))
-        {
             return UNBOUNDED;
-        }
-
+            
         minElement(tabular->knownTermsVector, rowPivot, tabular->cols, &colPivotIndex);
         base[colPivotIndex] = rowPivotIndex;
 
         updateAll(tabular, colPivot, colPivotIndex, rowPivot, minCosts);
+
+        minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
+
 #ifdef DEBUG
         printTableauToStream(stdout, tabular, base);
         while (getchar() != '\n')
             ;
 #endif
-        minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
     }
 
     HANDLE_ERROR(cudaFree(rowPivot));

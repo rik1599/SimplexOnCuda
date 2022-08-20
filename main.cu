@@ -71,7 +71,7 @@ int main(int argc, const char *argv[])
         break;
 
     default:
-        printf("Problem solved!\n");
+        printf("\nProblem solved!\n");
 
         for (size_t i = 0; i < problem->vars; i++)
         {
