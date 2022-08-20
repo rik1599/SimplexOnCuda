@@ -12,7 +12,6 @@ struct matrixInfo
 };
 
 #define TILE_DIM 32
-// (N - TILE_DIM)/(8192 - TILE_DIM) = (BLOCK_DIM(N) - 1)/15
 #define BLOCK_DIM(N) ceil((N + 512.0) / 544.0)
 
 #define THREADS 512
@@ -22,10 +21,9 @@ struct matrixInfo
  */
 __global__ void copyColumn(matrixInfo matInfo, int colToCpy, TYPE *dst)
 {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int step = blockDim.x * gridDim.x;
-
-    for (; i < matInfo.rows; i += step)
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x;
+         i < matInfo.rows;
+         i += blockDim.x * gridDim.x)
     {
         dst[i] = ROW(matInfo.mat, i, matInfo.pitch)[colToCpy];
     }
@@ -112,19 +110,14 @@ int solve(tabular_t *tabular, int *base)
             return UNBOUNDED;
         }
 
-        minElement(tabular->indicatorsVector, rowPivot, tabular->cols, &colPivotIndex);
+        minElement(tabular->knownTermsVector, rowPivot, tabular->cols, &colPivotIndex);
         base[colPivotIndex] = rowPivotIndex;
 
         updateAll(tabular, colPivot, colPivotIndex, rowPivot, minCosts);
 #ifdef DEBUG
-        printTableauToStream(stdout, tabular);
-        fprintf(stdout, "Vettore della base\n");
-        for (int i = 0; i < tabular->cols; i++)
-        {
-            fprintf(stdout, "%d\t", base[i]);
-        }
-
-        while(getchar() != '\n');
+        printTableauToStream(stdout, tabular, base);
+        while (getchar() != '\n')
+            ;
 #endif
         minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
     }

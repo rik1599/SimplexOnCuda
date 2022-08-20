@@ -32,7 +32,7 @@ tabular_t* newTabular(problem_t* problem)
 
     allocateGlobalMemory(tabular);
 
-    tabular->indicatorsVector = tabular->table;
+    tabular->knownTermsVector = tabular->table;
     tabular->constraintsMatrix = ROW(tabular->table, 1, tabular->pitch);
 
     return tabular;
@@ -57,7 +57,7 @@ __inline__ void print(FILE* Stream, tabular_t* tabular)
     HANDLE_ERROR(cudaMemcpy2D(
         hIndicators,
         BYTE_SIZE(tabular->cols),
-        tabular->indicatorsVector,
+        tabular->knownTermsVector,
         tabular->pitch,
         BYTE_SIZE(tabular->cols),
         1,
@@ -84,11 +84,16 @@ __inline__ void print(FILE* Stream, tabular_t* tabular)
     }
 }
 
-void printTableauToStream(FILE* Stream, tabular_t* tabular)
+void printTableauToStream(FILE* Stream, tabular_t* tabular, int* base)
 {
     if (tabular->table != NULL)
     {
         print(Stream, tabular);
+        fprintf(Stream, "Base\n");
+        for (int i = 0; i < tabular->cols; i++)
+        {
+            fprintf(Stream, "%d\t", base[i]);
+        }
     }
 }
 

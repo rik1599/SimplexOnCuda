@@ -2,7 +2,6 @@
 #include "problem.h"
 #include "twoPhaseMethod.h"
 #include "macro.h"
-#include "time.h"
 
 void setupDevice();
 

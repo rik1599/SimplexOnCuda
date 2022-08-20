@@ -10,11 +10,14 @@ typedef struct
     // Tableau memorizzato in global memory (per colonne)
     TYPE* table;
 
-    //Puntatore al vettore degli indicatori in table (vettore-colonna dei termini noti)
-    TYPE* indicatorsVector;
+    //Puntatore al vettore dei termini noti in table (vettore-colonna dei termini noti)
+    TYPE* knownTermsVector;
 
     //Puntatore alla matrice dei vincoli (dalla riga 1 in poi di table)
     TYPE* constraintsMatrix;
+
+    //Vettore dei costi (coefficienti della funzione obiettivo)
+    TYPE* costsVector;
 
     // Larghezza "reale" di table (in byte) in global memory.
     size_t pitch;
@@ -24,10 +27,6 @@ typedef struct
 
     //Numero di colonne di table
     int cols;
-
-    //Vettore dei costi (coefficienti della funzione obiettivo)
-    TYPE* costsVector;
-
 } tabular_t;
 
 /** Istanzia il problema in forma tabellare.
@@ -41,8 +40,9 @@ tabular_t* newTabular(problem_t* problem);
  * 
  * @param Stream FILE* - puntatore al file o lo stream su cui stampare
  * @param tabular tabular_t* - puntatore al problema in forma tabellare da stampare
+ * @param base int* - vettore della base in memoria host
  */
-void printTableauToStream(FILE* Stream, tabular_t* tabular);
+void printTableauToStream(FILE* Stream, tabular_t* tabular, int* base);
 
 /** Esegue il free della memoria per il tabular
  * 
