@@ -112,7 +112,7 @@ __global__ void createIndicatorsVector(TYPE* knownTerms, TYPE* rowPivot, unsigne
         i += blockDim.x * gridDim.x
     )
     {
-        knownTerms[i] = knownTerms[i] / rowPivot[i];
+        knownTerms[i] = compare(rowPivot[i]) > 0 ? knownTerms[i] / rowPivot[i] : INT_MAX * 1.0;
     }
 }
 

@@ -40,7 +40,6 @@ __global__ void fillBaseVector(int *base, int size, int start)
  *
  * @param vector - puntatore al vettore da settare ad 1
  * @param size - la dimensione del vettore
- * @param start - il punto di partenza
  */
 __global__ void setVectorToOne(TYPE *vector, int size)
 {
@@ -49,6 +48,22 @@ __global__ void setVectorToOne(TYPE *vector, int size)
     for (; idX < size; idX += step)
     {
         vector[idX] = 1;
+    }
+}
+
+/**
+ * Inverte i segni a tutti gli elementi del vettore da start alla fine del vettore
+ *
+ * @param vector - puntatore al vettore da settare ad 1
+ * @param size - la dimensione del vettore
+ */
+__global__ void negateVector(TYPE *vector, int size)
+{
+    int idX = threadIdx.x + blockIdx.x * blockDim.x;
+    int step = gridDim.x * blockDim.x;
+    for (; idX < size; idX += step)
+    {
+        vector[idX] = -vector[idX];
     }
 }
 
@@ -159,7 +174,7 @@ __global__ void getSolution(TYPE *source, int *base, int baseSize, TYPE *out, in
     for (int idX = threadIdx.x + blockIdx.x * blockDim.x; idX < baseSize; idX += gridDim.x * blockDim.x)
     {
         int var = base[idX];
-        if (var <= lastVar)
+        if (var < lastVar)
         {
             out[var] = source[idX];
         }
@@ -465,9 +480,8 @@ int phase2(tabular_t *tabular, int *base_h, int *base_dev)
                                  BYTE_SIZE(tabular->problem->vars),
                                  cudaMemcpyDefault,
                                  secondStream));
-
-    // aspettiamo che i trasferimenti finiscano ed eliminiamo gli stream
-    HANDLE_ERROR(cudaDeviceSynchronize());
+    negateVector<<<BL(tabular->problem->vars), THREADS, 0, secondStream>>>(tabular->costsVector + 1, tabular->problem->vars);
+    HANDLE_KERNEL_ERROR();
 
     HANDLE_ERROR(cudaStreamDestroy(firstStream));
     HANDLE_ERROR(cudaStreamDestroy(secondStream));
@@ -521,6 +535,7 @@ void getSolutionHost(tabular_t *tabular, int *base, TYPE *solution, TYPE *optima
     HANDLE_ERROR(cudaHostGetDevicePointer(&dev_solution, solution, 0));
 
     HANDLE_ERROR(cudaMemset(dev_solution, 0, BYTE_SIZE(tabular->problem->vars)));
+    
     getSolution<<<BL(tabular->cols), THREADS>>>(tabular->indicatorsVector, base, tabular->cols, dev_solution, tabular->problem->vars);
     HANDLE_KERNEL_ERROR();
 

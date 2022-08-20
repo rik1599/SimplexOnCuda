@@ -50,7 +50,7 @@ int main(int argc, const char *argv[])
     TYPE *solution = (TYPE *)(malloc(BYTE_SIZE(problem->vars)));
     TYPE optimalValue = 0;
     FILE *fileSolution = NULL;
-    if (fopen_s(&file, "solution.txt", "w") != 0)
+    if (fopen_s(&fileSolution, "solution.txt", "w") != 0)
     {
         fprintf(stderr, "Errore nell'apertura del file");
         exit(-1);
