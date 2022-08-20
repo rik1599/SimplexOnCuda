@@ -1,96 +1,276 @@
 #include "twoPhaseMethod.h"
 #include "error.cuh"
+#include "gaussian.cuh"
 
-/** Inserisce una matrice di indentità in coda a una matrice
- * 
+#define THREADS 512
+#define BL(N) min((N + THREADS - 1) / THREADS, 1024)
+
+/** Inserisce due matrici di indentità in coda a una matrice
+ *  Si suppone sia linearizzata per colonne (non penso sia possibile generalizzare)
+ *
  * @param mat - puntatore alla matrice
- * @param rows - righe della matrice
  * @param cols - colonne della matrice
- * @param startCol - colonna di partenza
- * @param dim - dimensione dell'identità
+ * @param pitch - il pitch della matrice
  */
-__global__ void fillMatrix(TYPE* mat, int rows, int cols, int startCol, int dim)
+__global__ void fillMatrix(TYPE *mat, int cols, size_t pitch)
 {
-
-}
-
-/** Inizializza il vettore della base con numeri progressivi da start a start + size - 1
- */
-__global__ void fillBaseVector(int* base, int size, int start)
-{
-
-}
-
-/** Implementa in parallelo operazioni del tipo
- * mat[0] = mat[0] - (\sum_{i=i}^{rows-1} coefficient[i]*mat[i])
- * 
- * In pratica sottrae al vettore a riga 0 del tableau (valori della funzione obiettivo)
- * TUTTE le altre righe, ognuna opportunatamente moltiplicata per un coefficiente.
- * 
- * L'operazione viene fatta "per tile"
- * 
- * Si tratta di una variante dell'esercizio dell'istogramma visto a lezione 
- */
-__global__ void gaussianElimination(TYPE* mat, TYPE* lastCol, TYPE* coefficients, int rows, int cols)
-{
-
-}
-
-/** Scandisce il vettore della base per creare il vettore dei coefficienti.
- * 
- * Sostanzialmente coefficients[i] = firstRow[base[i]]
- */
-__global__ void createCoefficientVector(TYPE* firstRow, int cols, int* base, int rows, TYPE* coefficients)
-{
-
-}
-
-/** Esprimo la funzione obiettivo in termini delle variabili non di base (vedi es. istogramma)
- */
-void updateObjectiveFunction(tabular_t* tabular)
-{
-
+    for (int idX = threadIdx.x + blockIdx.x * blockDim.x;
+         idX < cols;
+         idX += gridDim.x * blockDim.x)
+    {
+        *(INDEX(mat, idX, idX, pitch)) = 1;
+        *(INDEX(mat, idX + cols, idX, pitch)) = 1;
+    }
 }
 
 /**
- * Passaggi per la fase 1 
- * Dati m il numero di vincoli e n il numero di variabili
- * 1) Riempimento tabella (su cuda stream diversi)
- *      1) primi n+m valori della prima riga a 0 (cudaMemsetAsync)
- *      2) ultimi m valori della prima riga a 1 (kernel)
- *      3) copia della matrice dei vincoli originale dalla prima riga di tabular->table sulle prime n colonne (cudaMemcpy2DAsync)
- *      4) riempimento delle successive m colonne con identità (kernel)
- *      5) riempimento ultime m colonne con identità (kernel)
- *      6) copia del vettore dei termini noti nel vettore degli indicatori a partire dall'indice 1 (cudaMemcpyAsync)
- *      7) riempimento vettore della base con numeri progressivi da n+m a n+2m-1 (kernel)
- * 2) Esprimo la funzione obiettivo in termini delle variabili non di base (vedi es. istogramma)
- * 3) Eseguo l'algoritmo di soluzione fino all'ottimo (file a parte)
- * 4) Controllo il primo valore del vettore degli indicatori: se < 0 problema infeasible
- * 5) Se è presente in base un valore x tale che n+m <= x < n+2m, il problema è degenere (fare su un kernel?)
- * 6) Proseguo a fase 2
+ * Inizializza il vettore della base con numeri progressivi da start a start + size - 1
  */
-int phase1(tabular_t* tabular, int* base)
+__global__ void fillBaseVector(int *base, int size, int start)
 {
-    return FEASIBLE;
+    for (int idX = threadIdx.x + blockIdx.x * blockDim.x;
+         idX < size;
+         idX += gridDim.x * blockDim.x)
+    {
+        base[idX] = (start + idX);
+    }
 }
 
 /**
- * Passaggi per la fase 2
- * Dati m il numero di vincoli e n il numero di variabili
- * 
- * 1) Riduco il numero di colonne da n+2m a n+m (basta aggiornare il valore in tabular->cols)
- * 2) Uso due stream per riempire la prima riga
- *      1) Copio il vettore dei coefficienti nei primi n elementi della prima riga (cudaMemcpyAsync)
- *      2) Imposto i restanti m elementi a 0 (cudaMemsetAsync)
- * 3) Esprimo la funzione obiettivo in termini delle variabili non di base (vedi es. istogramma)
- * 4) Eseguo l'algoritmo di soluzione fino all'ottimo (file a parte)
+ * Setta a 1 tutti gli elementi del vettore da start alla fine del vettore
+ *
+ * @param vector - puntatore al vettore da settare ad 1
+ * @param size - la dimensione del vettore
  */
-int phase2(tabular_t* tabular, int* base)
+__global__ void setVectorToOne(TYPE *vector, int size)
 {
-    return FEASIBLE;
+    for (int idX = threadIdx.x + blockIdx.x * blockDim.x;
+         idX < size;
+         idX += gridDim.x * blockDim.x)
+    {
+        vector[idX] = 1;
+    }
 }
 
-__inline__ void unregisterMemory(int* base_h, problem_t* problem)
+/**
+ * Inverte i segni a tutti gli elementi del vettore da start alla fine del vettore
+ *
+ * @param vector - puntatore al vettore da settare ad 1
+ * @param size - la dimensione del vettore
+ */
+__global__ void negateVector(TYPE *vector, int size)
+{
+    for (int idX = threadIdx.x + blockIdx.x * blockDim.x;
+         idX < size;
+         idX += gridDim.x * blockDim.x)
+    {
+        vector[idX] = -vector[idX];
+    }
+}
+
+/*
+ * Genera in parallelo il vettore della soluzione nella memoria device
+ */
+__global__ void getSolution(TYPE *source, int *base, int baseSize, TYPE *out, int lastVar)
+{
+    for (int idX = threadIdx.x + blockIdx.x * blockDim.x;
+         idX < baseSize;
+         idX += gridDim.x * blockDim.x)
+    {
+        int var = base[idX];
+        if (var < lastVar)
+        {
+            out[var] = source[idX];
+        }
+    }
+}
+
+/*
+ * Dato un valore minimo ed un valore massimo controlla se nel vettore in input ce ne è uno compreso
+ * (min <= x < max)
+ */
+__global__ void countElementsInRange(int *vector, int size, int min, int max, unsigned int *out)
+{
+    for (int idX = threadIdx.x + blockIdx.x * blockDim.x;
+         idX < size;
+         idX += gridDim.x * blockDim.x)
+    {
+        if (vector[idX] < max && vector[idX] >= min)
+            atomicAdd(out, 1);
+    }
+}
+
+void fillTableu(tabular_t *tabular, int *base)
+{
+    cudaStream_t streams[6];
+    for (size_t i = 0; i < 6; i++)
+        HANDLE_ERROR(cudaStreamCreate(streams + i));
+
+    // Punto 1: primi n + m valori a 0 della funzione dei costi
+    int sizeToSetZero = tabular->problem->vars + tabular->problem->constraints + 1;
+    HANDLE_ERROR(cudaMemsetAsync(tabular->costsVector, 0, BYTE_SIZE(sizeToSetZero), streams[0]));
+
+    // Punto 2: ultimi m valori della prima riga a 1 (kernel)
+    setVectorToOne<<<BL(tabular->problem->constraints), THREADS, 0, streams[1]>>>(tabular->costsVector + sizeToSetZero, tabular->problem->constraints);
+
+    // Punto 3: copia della matrice dei vincoli originale dalla seconda riga di tabular->table sulle prime n colonne (cudaMemcpy2DAsync)
+    HANDLE_ERROR(cudaMemcpy2DAsync(
+        tabular->constraintsMatrix,               // destinazione
+        tabular->pitch,                           // pitch della destinazione
+        tabular->problem->constraintsMatrix,      // fonte
+        BYTE_SIZE(tabular->problem->constraints), // pitch della fonte
+        BYTE_SIZE(tabular->problem->constraints), // larghezza matrice
+        tabular->problem->vars,                   // altezza matrice
+        cudaMemcpyDefault,                        // tipo
+        streams[2]                                // stream
+        ));
+
+    // Punto 4 e 5: riempimento delle successive m colonne con identità (kernel)
+    fillMatrix<<<BL(tabular->cols), THREADS, 0, streams[3]>>>(
+        ROW(tabular->constraintsMatrix, tabular->problem->vars, tabular->pitch),
+        tabular->cols, // colonne della matrice
+        tabular->pitch // pitch
+    );
+
+    // Punto 6: copia del vettore dei termini noti nel vettore degli indicatori (cudaMemcpyAsync)
+    HANDLE_ERROR(cudaMemcpyAsync(
+        tabular->knownTermsVector,                // puntatore al vettore destinazione (vettore indicatori)
+        tabular->problem->knownTermsVector,       // fonte
+        BYTE_SIZE(tabular->problem->constraints), // dimensione in byte del vettore
+        cudaMemcpyDefault,                        // tipo
+        streams[4]                                // stream
+        ));
+
+    // Punto 7: riempimento vettore della base con numeri progressivi da n+m a n+2m-1 (kernel)
+    fillBaseVector<<<BL(tabular->cols), THREADS, 0, streams[5]>>>(
+        base,
+        tabular->cols,
+        tabular->problem->vars + tabular->problem->constraints);
+
+    HANDLE_KERNEL_ERROR();
+
+    for (size_t i = 0; i < 6; i++)
+        HANDLE_ERROR(cudaStreamDestroy(streams[i]));
+}
+
+/**
+ * Controlla se il problema è degenere
+ * @return DEGENERATE se degenere, FEASIBLE altrimenti
+ */
+int checkDegeneracy(int *base, int size, int firstArtificial, int endArtificial)
+{
+    unsigned int *out;
+    HANDLE_ERROR(cudaMalloc((void **)&out, sizeof(unsigned int)));
+    HANDLE_ERROR(cudaMemset(out, 0, sizeof(unsigned int)));
+
+    countElementsInRange<<<BL(size), THREADS>>>(base, size, firstArtificial, endArtificial, out);
+
+    int result;
+    HANDLE_ERROR(cudaMemcpy(&result, out, sizeof(unsigned int), cudaMemcpyDefault));
+
+    HANDLE_ERROR(cudaFree(out));
+
+    if (result > 0)
+        return DEGENERATE;
+    else
+        return FEASIBLE;
+}
+
+int phase1(tabular_t *tabular, int *base_h, int *base_dev)
+{
+    // Fase 1: riempimento del tableu
+    fillTableu(tabular, base_dev);
+#ifdef DEBUG
+    fprintf(stdout, "\nTableu nella situazione iniziale\n");
+    printTableauToStream(stdout, tabular, base_h);
+#endif
+
+    // Fase 2: eliminazione di gauss
+    updateObjectiveFunction(tabular, base_dev);
+#ifdef DEBUG
+    fprintf(stdout, "\nTableu dopo l'eliminazione di gauss\n");
+    printTableauToStream(stdout, tabular, base_h);
+#endif
+
+    // Fase 3: lancio del solver
+    solve(tabular, base_h);
+#ifdef DEBUG
+    fprintf(stdout, "\nTableu dopo il lancio del primo solver\n");
+    printTableauToStream(stdout, tabular, base_h);
+#endif
+
+    // Fase 4: controllo infattibilità
+    TYPE firstKnownTermsValue;
+    HANDLE_ERROR(cudaMemcpy(&firstKnownTermsValue, tabular->costsVector, BYTE_SIZE(1), cudaMemcpyDeviceToHost));
+    if (firstKnownTermsValue < 0)
+        return INFEASIBLE;
+
+    // Fase 5: controllo degenere: se è presente in base un valore x tale che n+m <= x < n+2m, il problema è degenere
+    return checkDegeneracy(
+        base_dev,
+        tabular->cols,
+        tabular->problem->vars + tabular->problem->constraints,
+        tabular->problem->vars + 2 * tabular->problem->constraints);
+}
+
+int phase2(tabular_t *tabular, int *base_h, int *base_dev)
+{
+    // Fase 1: riduzione del numero di colonne
+    tabular->rows -= tabular->cols;
+
+#ifdef DEBUG
+    fprintf(stdout, "\nTableu dopo aggiornamento colonne in phase2\n");
+    printTableauToStream(stdout, tabular, base_h);
+#endif
+
+    // Fase 2: riempimento vettore costi su due stream diversi
+    cudaStream_t streams[2];
+    for (size_t i = 0; i < 2; i++)
+        HANDLE_ERROR(cudaStreamCreate(streams + i));
+
+    // ultimi m elementi a 0
+    HANDLE_ERROR(cudaMemsetAsync(
+        1 + tabular->costsVector + tabular->problem->vars,
+        0,
+        BYTE_SIZE(tabular->cols),
+        streams[0]));
+
+    HANDLE_ERROR(cudaMemcpyAsync(
+        tabular->costsVector + 1,
+        tabular->problem->objectiveFunction,
+        BYTE_SIZE(tabular->problem->vars),
+        cudaMemcpyDefault,
+        streams[1]));
+    negateVector<<<BL(tabular->problem->vars), THREADS, 0, streams[1]>>>(tabular->costsVector + 1, tabular->problem->vars);
+    HANDLE_KERNEL_ERROR();
+
+    for (size_t i = 0; i < 2; i++)
+        HANDLE_ERROR(cudaStreamDestroy(streams[i]));
+
+#ifdef DEBUG
+    fprintf(stdout, "\nTableu dopo riempimento funzione obiettivo in phase2\n");
+    printTableauToStream(stdout, tabular, base_h);
+#endif
+
+    // Fase 3: Eliminazione di gauss per esprimere la funzione obiettivo in termini delle variabili non di base
+    updateObjectiveFunction(tabular, base_dev);
+#ifdef DEBUG
+    fprintf(stdout, "\nTableu dopo eliminazione di gauss in phase2\n");
+    printTableauToStream(stdout, tabular, base_h);
+#endif
+
+// Fase 4: Esecuzione dell'algoritmo di risoluzione
+#ifdef DEBUG
+    int esito = solve(tabular, base_h);
+    fprintf(stdout, "\nTableu dopo seconda esecuzione del solver\n");
+    printTableauToStream(stdout, tabular, base_h);
+    return esito;
+#else
+    return solve(tabular, base_h);
+#endif
+}
+
+__inline__ void unregisterMemory(int *base_h, problem_t *problem)
 {
     HANDLE_ERROR(cudaHostUnregister(problem->constraintsMatrix));
     HANDLE_ERROR(cudaHostUnregister(problem->knownTermsVector));
@@ -98,40 +278,51 @@ __inline__ void unregisterMemory(int* base_h, problem_t* problem)
     HANDLE_ERROR(cudaFreeHost(base_h));
 }
 
-int twoPhaseMethod(problem_t* problem, TYPE* solution, TYPE* optimalValue)
+void getSolutionHost(tabular_t *tabular, int *base, TYPE *solution, TYPE *optimalValue)
 {
-    tabular_t* tabular = newTabular(problem);
-    int* base_h;
-    int* base_map;
+    HANDLE_ERROR(cudaMemcpy(optimalValue, tabular->costsVector, BYTE_SIZE(1), cudaMemcpyDefault));
+
+    TYPE *dev_solution;
+    HANDLE_ERROR(cudaHostRegister(solution, BYTE_SIZE(tabular->problem->vars), cudaHostRegisterMapped));
+    HANDLE_ERROR(cudaHostGetDevicePointer(&dev_solution, solution, 0));
+    HANDLE_ERROR(cudaMemset(dev_solution, 0, BYTE_SIZE(tabular->problem->vars)));
+
+    getSolution<<<BL(tabular->cols), THREADS>>>(tabular->knownTermsVector, base, tabular->cols, dev_solution, tabular->problem->vars);
+    HANDLE_KERNEL_ERROR();
+
+    HANDLE_ERROR(cudaHostUnregister(solution));
+}
+
+int twoPhaseMethod(problem_t *problem, TYPE *solution, TYPE *optimalValue)
+{
+    tabular_t *tabular = newTabular(problem);
+    int *base_h;
+    int *base_map;
 
     // Uso memoria di tipo mapped per memorizzare il vettore di base
-    HANDLE_ERROR(cudaHostAlloc(&base_h, tabular->rows * sizeof(int), cudaHostAllocMapped));
+    HANDLE_ERROR(cudaHostAlloc(&base_h, tabular->cols * sizeof(int), cudaHostAllocMapped)); // il vettore della base ha dimensione vettore dei vincoli => tabular->cols
     HANDLE_ERROR(cudaHostGetDevicePointer(&base_map, base_h, 0));
 
-    //Registro i vettori del problema come memoria page-locked (per poter utilizzare i trasferimenti paralleli con gli stream)
+    // Registro i vettori del problema come memoria page-locked (per poter utilizzare i trasferimenti paralleli con gli stream)
     HANDLE_ERROR(cudaHostRegister(problem->constraintsMatrix, BYTE_SIZE(problem->vars * problem->constraints), cudaHostRegisterDefault));
     HANDLE_ERROR(cudaHostRegister(problem->knownTermsVector, BYTE_SIZE(problem->constraints), cudaHostRegisterDefault));
     HANDLE_ERROR(cudaHostRegister(problem->objectiveFunction, BYTE_SIZE(problem->vars), cudaHostRegisterDefault));
 
-    int result = phase1(tabular, base_map);
+    int result = phase1(tabular, base_h, base_map);
     if (result != FEASIBLE)
     {
         unregisterMemory(base_h, problem);
         return result;
     }
-    
-    result = phase2(tabular, base_map);
+
+    result = phase2(tabular, base_h, base_map);
     if (result != FEASIBLE)
     {
         unregisterMemory(base_h, problem);
         return result;
     }
-    
-    /* Estrai soluzione dalla tabella (si può fare parallelo?)
-    Per estrarre la soluzione si prende:
-    1) tabular->indicatorCol[0] -> valore ottimale della funzione obiettivo
-    2) Per ogni variabile di base: solution[base[i]] = tabular->indicatorCol[i], il resto è 0
-    */
+
+    getSolutionHost(tabular, base_map, solution, optimalValue);
 
     unregisterMemory(base_h, problem);
     return result;

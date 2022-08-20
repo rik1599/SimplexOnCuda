@@ -1,35 +1,121 @@
 #include "solver.h"
 #include "twoPhaseMethod.h"
 #include "reduction.cuh"
+#include "error.cuh"
 
-/** Per i punti 3, 4, 8 lavoro su singole colonne. Per evitare accessi strided copio la colonna in un 
- * vettore in shared memory utilizzando questo metodo:
- * 1) Calcolo in quali "tile" (32x32) si trova la colonna da copiare
- * 2) Lancio una grid di blocchi grandi 32x32 (la grid è grande rows/32)
- * 3) Ogni thread copia un elemento della matrice in shared memory (matrice 32x33 per evitare bank conflict)
- * 4) I thread con indice y=0, copiano l'elemento della colonna cercata nel vettore in shared memory
- */
-__global__ void copyColumn(TYPE* matrix, int rows, int cols, int colToCpy, volatile TYPE* sVet)
+struct matrixInfo
 {
+    TYPE *mat;
+    size_t pitch;
+    int rows;
+    int cols;
+};
 
+#define TILE_DIM 32
+#define BLOCK_DIM(N) ceil((N + 512.0) / 544.0)
+
+#define THREADS 512
+#define BL(N) min((N + THREADS - 1) / THREADS, 1024)
+
+__global__ void copyColumn(matrixInfo matInfo, int colToCpy, TYPE *dst)
+{
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x;
+         i < matInfo.rows;
+         i += blockDim.x * gridDim.x)
+    {
+        dst[i] = ROW(matInfo.mat, i, matInfo.pitch)[colToCpy];
+    }
 }
 
-/** Costruisce il vettore degli indicatori lastCol/colPivot */
-__global__ void createIndicatorVector(TYPE* mat, TYPE* lastCol, int rows, int cols, int colPivotIndex)
+__global__ void updateVariables(matrixInfo matInfo, double *colPivot, double *rowPivot, int colPivotIndex, double pivot)
 {
+    // coordinate
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
 
+    // dimensioni griglia
+    int nx = blockDim.x * gridDim.x;
+    int ny = blockDim.y * gridDim.y;
+
+    double *pRow;
+    for (int col = x; col < matInfo.cols; col += nx)
+    {
+        for (int row = y; row < matInfo.rows; row += ny)
+        {
+            pRow = ROW(matInfo.mat, row, matInfo.pitch);
+            pRow[col] = col == colPivotIndex ? pRow[col] / pivot : fma(-rowPivot[col] / pivot, colPivot[row], pRow[col]);
+        }
+    }
 }
 
-/** 9) Aggiornamento tableau per tile. Per ogni A[y][x]
- *      se y == rowPivotIndex allora A[y][x] = A[y][x] * recPivot
- *      altrimenti  A[y][x] = - colPivot[y] * rowPivot[x] * recPivot + A[y][x]
- */
-__global__ void update(TYPE* mat, TYPE* lastCol, TYPE recPivot, int rows, int cols, int rowPivotIndex, int colPivotIndex)
+__global__ void updateCostsVector(TYPE *costVector, int size, double *colPivot, double costsPivot, double pivot)
 {
-
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x;
+         i < size;
+         i += blockDim.x * gridDim.x)
+    {
+        costVector[i] = fma(-costsPivot / pivot, colPivot[i], costVector[i]);
+    }
 }
 
-int solve(tabular_t* tabular, int* base)
+__inline__ void updateAll(tabular_t *tabular, TYPE *colPivot, int colPivotIndex, TYPE *rowPivot, TYPE minCosts)
 {
+    matrixInfo matInfo = {tabular->table, tabular->pitch, tabular->rows, tabular->cols};
+
+    copyColumn<<<BL(tabular->rows), THREADS>>>(matInfo, colPivotIndex, colPivot);
+    HANDLE_KERNEL_ERROR();
+
+    TYPE pivot;
+    HANDLE_ERROR(cudaMemcpy(&pivot, rowPivot + colPivotIndex, BYTE_SIZE(1), cudaMemcpyDefault));
+
+    cudaStream_t streams[2];
+    for (size_t i = 0; i < 2; i++)
+        HANDLE_ERROR(cudaStreamCreate(streams + i));
+
+    dim3 block(TILE_DIM, TILE_DIM);
+    dim3 grid(BLOCK_DIM(tabular->cols), BLOCK_DIM(tabular->rows));
+    updateVariables<<<grid, block, 0, streams[0]>>>(matInfo, colPivot, rowPivot, colPivotIndex, pivot);
+
+    updateCostsVector<<<BL(tabular->rows), THREADS, 0, streams[1]>>>(tabular->costsVector, tabular->rows, colPivot, minCosts, pivot);
+
+    HANDLE_KERNEL_ERROR();
+
+    for (size_t i = 0; i < 2; i++)
+        HANDLE_ERROR(cudaStreamDestroy(streams[i]));
+}
+
+int solve(tabular_t *tabular, int *base)
+{
+    TYPE *rowPivot, *colPivot;
+    HANDLE_ERROR(cudaMalloc((void **)&rowPivot, BYTE_SIZE(tabular->cols)));
+    HANDLE_ERROR(cudaMalloc((void **)&colPivot, BYTE_SIZE(tabular->rows)));
+
+    unsigned int colPivotIndex;
+    unsigned int rowPivotIndex;
+
+    TYPE minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
+    while (compare(minCosts) < 0)
+    {
+        HANDLE_ERROR(cudaMemcpy(rowPivot, ROW(tabular->constraintsMatrix, rowPivotIndex, tabular->pitch), BYTE_SIZE(tabular->cols), cudaMemcpyDefault));
+
+        if (isLessThanZero(rowPivot, tabular->cols))
+            return UNBOUNDED;
+            
+        minElement(tabular->knownTermsVector, rowPivot, tabular->cols, &colPivotIndex);
+        base[colPivotIndex] = rowPivotIndex;
+
+        updateAll(tabular, colPivot, colPivotIndex, rowPivot, minCosts);
+
+        minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
+
+#ifdef DEBUG
+        printTableauToStream(stdout, tabular, base);
+        while (getchar() != '\n')
+            ;
+#endif
+    }
+
+    HANDLE_ERROR(cudaFree(rowPivot));
+    HANDLE_ERROR(cudaFree(colPivot));
     return FEASIBLE;
 }

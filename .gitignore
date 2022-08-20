@@ -72,3 +72,6 @@
 
 # End of https://www.toptal.com/developers/gitignore/api/cuda,c++,visualstudiocode
 .Rproj.user
+
+debugPhase*.txt
+solution.txt

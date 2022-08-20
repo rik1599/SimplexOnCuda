@@ -5,58 +5,84 @@
 
 void setupDevice();
 
-int main(int argc, const char* argv[])
+int main(int argc, const char *argv[])
 {
-    if (argc < 2)
+    printf("Starting....\n");
+
+    setupDevice();
+
+    FILE *file = NULL;
+    int vars;
+    int constraints;
+    problem_t *problem;
+
+    if (argc == 2)
+    {
+        printf("Leggo problema da file\n");
+        if (fopen_s(&file, argv[1], "r") != 0)
+        {
+            fprintf(stderr, "Errore nell'apertura del file");
+            exit(-1);
+        }
+
+        problem = readProblemFromFile(file);
+        fclose(file);
+    }
+    else if (argc == 3)
+    {
+        printf("Genero problema casuale\n");
+        vars = atoi(argv[1]);
+        constraints = atoi(argv[2]);
+
+        problem = generateRandomProblem(vars, constraints, 0);
+    }
+    else
     {
         fprintf_s(stderr, "Argomenti mancanti!");
         exit(-1);
     }
 
-    FILE* file;
-    if (fopen_s(&file, argv[1], "r") != 0)
+#ifdef DEBUG
+    printProblemToStream(stdout, problem);
+#endif
+
+    TYPE *solution = (TYPE *)(malloc(BYTE_SIZE(problem->vars)));
+    TYPE optimalValue = 0;
+    FILE *fileSolution = NULL;
+    if (fopen_s(&fileSolution, "solution.txt", "w") != 0)
     {
         fprintf(stderr, "Errore nell'apertura del file");
-		exit(-1);
+        exit(-1);
     }
 
-    problem_t* problem = readProblemFromFile(file);
-    fclose(file);
+    printf("Resolving....\n");
+    switch (twoPhaseMethod(problem, solution, &optimalValue))
+    {
+    case INFEASIBLE:
+        printf("Problem INFEASIBLE!\n");
+        break;
 
-    #ifdef DEBUG
-    printProblemToStream(stdout, problem);
-    #endif
+    case UNBOUNDED:
+        printf("Problem UNBOUNDED!\n");
+        break;
 
-    // setupDevice();
+    case DEGENERATE:
+        printf("Problem DEGENERATE!\n");
+        break;
+
+    default:
+        printf("\nProblem solved!\n");
+
+        for (size_t i = 0; i < problem->vars; i++)
+        {
+            fprintf_s(fileSolution, "%lf\n", solution[i]);
+        }
+        fprintf_s(fileSolution, "\nOptimal value: %lf\n", optimalValue);
+        break;
+    }
+    fclose(fileSolution);
     
-    // TYPE* solution = (TYPE*)(malloc(BYTE_SIZE(problem->vars)));
-    // TYPE optimalValue = 0;
-
-    // switch (twoPhaseMethod(problem, solution, &optimalValue))
-    // {
-    // case INFEASIBLE:
-    //     printf("Problem INFEASIBLE!\n");
-    //     break;
-    
-    // case UNBOUNDED:
-    //     printf("Problem UNBOUNDED!\n");
-    //     break;
-    
-    // case DEGENERATE:
-    //     printf("Problem DEGENERATE!\n");
-    //     break;
-
-    // default:
-    //     printf("Problem solved!\nVariables values: ");
-    //     for (size_t i = 0; i < problem->vars; i++)
-    //     {
-    //         printf("%lf\t", solution[i]);
-    //     }
-    //     printf("\nOptimal value: %lf\n", optimalValue);
-    //     break;
-    // }
-
-    // free(solution);
+    free(solution);
     freeProblem(problem);
 }
 
@@ -65,12 +91,14 @@ void setupDevice()
     if (TYPE_SIZE == 8)
     {
         cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
+        printf("Bank size set to 8 byte\n");
     }
 
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, 0);
     if (!prop.canMapHostMemory)
     {
+        fprintf_s(stderr, "Device cannot map memory!\n");
         exit(-1);
     }
     cudaSetDeviceFlags(cudaDeviceMapHost);
