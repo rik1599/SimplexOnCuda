@@ -1,6 +1,7 @@
 #include "reduction.cuh"
 #include "error.cuh"
 #include "stdio.h"
+#include "float.h"
 
 #define THREADS 512
 #define BL(N) min((N + THREADS - 1) / THREADS, 1024)
@@ -38,7 +39,7 @@ __inline__ __device__ void blockReduceMin(volatile TYPE *pVal, volatile int *pIn
 
     __syncthreads();
 
-    *pVal = (threadIdx.x < blockDim.x / warpSize) ? sdata[lane] : INT_MAX * 1.0;
+    *pVal = (threadIdx.x < blockDim.x / warpSize) ? sdata[lane] : DBL_MAX;
     *pIndex = (threadIdx.x < blockDim.x / warpSize) ? sindex[lane] : -1;
 
     if (wid == 0)
@@ -50,7 +51,7 @@ __inline__ __device__ void blockReduceMin(volatile TYPE *pVal, volatile int *pIn
 template <bool isFirstExecution>
 __global__ void deviceReduceKernel(TYPE *g_values, unsigned int *g_index, int N)
 {
-    TYPE minVal = INT_MAX * 1.0;
+    TYPE minVal = DBL_MAX;
     int minIndex = -1;
 
     for (int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -108,7 +109,7 @@ __global__ void createIndicatorsVector(TYPE *knownTerms, TYPE *rowPivot, unsigne
          i < N;
          i += blockDim.x * gridDim.x)
     {
-        knownTerms[i] = compare(rowPivot[i]) > 0 ? knownTerms[i] / rowPivot[i] : INT_MAX * 1.0;
+        knownTerms[i] = compare(rowPivot[i]) > 0 ? knownTerms[i] / rowPivot[i] : DBL_MAX;
     }
 }
 
@@ -159,7 +160,7 @@ __inline__ __device__ void blockReduceMax(volatile TYPE *pVal)
 
     __syncthreads();
 
-    *pVal = (threadIdx.x < blockDim.x / warpSize) ? sdata[lane] : INT_MIN * 1.0;
+    *pVal = (threadIdx.x < blockDim.x / warpSize) ? sdata[lane] : DBL_MIN;
 
     if (wid == 0)
         warpReduceMax(pVal);
@@ -167,7 +168,7 @@ __inline__ __device__ void blockReduceMax(volatile TYPE *pVal)
 
 __global__ void deviceReduceKernel(TYPE *g_values, int N)
 {
-    TYPE maxVal = INT_MIN * 1.0;
+    TYPE maxVal = DBL_MIN;
 
     for (int i = blockIdx.x * blockDim.x + threadIdx.x;
          i < N;
