@@ -17,8 +17,6 @@ struct matrixInfo
 #define THREADS 512
 #define BL(N) min((N + THREADS - 1) / THREADS, 1024)
 
-/** Copio una colonna della matrice (con accesso strided) in un vettore in memoria globale
- */
 __global__ void copyColumn(matrixInfo matInfo, int colToCpy, TYPE *dst)
 {
     for (int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -29,10 +27,6 @@ __global__ void copyColumn(matrixInfo matInfo, int colToCpy, TYPE *dst)
     }
 }
 
-/** 9) Aggiornamento tableau per tile. Per ogni A[y][x]
- *      se y == colPivotIndex allora A[y][x] = A[y][x] * recPivot
- *      altrimenti  A[y][x] = - colPivot[y] * rowPivot[x] * recPivot + A[y][x]
- */
 __global__ void updateVariables(matrixInfo matInfo, double *colPivot, double *rowPivot, int colPivotIndex, double pivot)
 {
     // coordinate
@@ -44,12 +38,11 @@ __global__ void updateVariables(matrixInfo matInfo, double *colPivot, double *ro
     int ny = blockDim.y * gridDim.y;
 
     double *pRow;
-    char *pMat = (char *)matInfo.mat;
     for (int col = x; col < matInfo.cols; col += nx)
     {
         for (int row = y; row < matInfo.rows; row += ny)
         {
-            pRow = (double *)(pMat + row * matInfo.pitch);
+            pRow = ROW(matInfo.mat, row, matInfo.pitch);
             pRow[col] = col == colPivotIndex ? pRow[col] / pivot : fma(-rowPivot[col] / pivot, colPivot[row], pRow[col]);
         }
     }
@@ -57,10 +50,9 @@ __global__ void updateVariables(matrixInfo matInfo, double *colPivot, double *ro
 
 __global__ void updateCostsVector(TYPE *costVector, int size, double *colPivot, double costsPivot, double pivot)
 {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int step = blockDim.x * gridDim.x;
-
-    for (; i < size; i += step)
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x;
+         i < size;
+         i += blockDim.x * gridDim.x)
     {
         costVector[i] = fma(-costsPivot / pivot, colPivot[i], costVector[i]);
     }
