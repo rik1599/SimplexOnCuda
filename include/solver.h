@@ -6,8 +6,8 @@
  * 1) Test ottimalità: la prima riga del tableau è >= 0
  *      Se true -> problema FEASIBLE
  *      altrimenti prosegui
- * 2) Cerca minimo nella prima riga -> colPivot
- * 3) Controllo di unbounding: colPivot è <= 0
+ * 2) Cerca minimo nel vettore dei costi -> rowPivot
+ * 3) Controllo di unbounding: rowPivot è <= 0
  *      Se true -> problema UNBOUNDED
  *      altrimenti prosegui
  * 4) Costruisco il vettore degli indicatori: divido l'ultima colonna con colPivot

@@ -17,7 +17,7 @@ void allocateGlobalMemory(tabular_t* tabular)
     ));
 
     HANDLE_ERROR(cudaMalloc(
-        (void**)&tabular->lastCol,
+        (void**)&tabular->costsVector,
         BYTE_SIZE(tabular->rows)
     ));
 }
@@ -27,23 +27,22 @@ tabular_t* newTabular(problem_t* problem)
     tabular_t* tabular = (tabular_t*)malloc(sizeof(tabular_t));
     
     tabular->problem = problem;
-    //Registro i vettori del problema come memoria page-locked (per poter utilizzare i trasferimenti paralleli con gli stream)
-    HANDLE_ERROR(cudaHostRegister(problem->constraintsMatrix, BYTE_SIZE(problem->vars * problem->constraints), cudaHostRegisterDefault));
-    HANDLE_ERROR(cudaHostRegister(problem->knownTermsVector, BYTE_SIZE(problem->constraints), cudaHostRegisterDefault));
-    HANDLE_ERROR(cudaHostRegister(problem->objectiveFunction, BYTE_SIZE(problem->vars), cudaHostRegisterDefault));
-
-    tabular->rows = problem->constraints + 1;
-    tabular->cols = problem->vars + 2 * problem->constraints;
+    tabular->cols = problem->constraints;
+    tabular->rows = 1 + problem->vars + (2 * problem->constraints);
 
     allocateGlobalMemory(tabular);
+
+    tabular->indicatorsVector = tabular->table;
+    tabular->constraintsMatrix = ROW(tabular->table, 1, tabular->pitch);
 
     return tabular;
 }
 
-void print(FILE* Stream, tabular_t* tabular)
+__inline__ void print(FILE* Stream, tabular_t* tabular)
 {
     TYPE* hTable = (TYPE*)malloc(BYTE_SIZE(tabular->rows * tabular->cols));
     TYPE* hIndicators = (TYPE*)malloc(BYTE_SIZE(tabular->cols));
+    TYPE* hCosts = (TYPE*)malloc(BYTE_SIZE(tabular->rows));
 
     HANDLE_ERROR(cudaMemcpy2D(
         hTable,
@@ -55,10 +54,20 @@ void print(FILE* Stream, tabular_t* tabular)
         cudaMemcpyDeviceToHost
     ));
 
-    HANDLE_ERROR(cudaMemcpy(
+    HANDLE_ERROR(cudaMemcpy2D(
         hIndicators,
-        tabular->lastCol,
-        tabular->rows,
+        BYTE_SIZE(tabular->cols),
+        tabular->indicatorsVector,
+        tabular->pitch,
+        BYTE_SIZE(tabular->cols),
+        1,
+        cudaMemcpyDeviceToHost
+    ));
+
+    HANDLE_ERROR(cudaMemcpy(
+        hCosts,
+        tabular->costsVector,
+        BYTE_SIZE(tabular->rows),
         cudaMemcpyDeviceToHost
     ));
 
@@ -69,10 +78,10 @@ void print(FILE* Stream, tabular_t* tabular)
         {
             fprintf(Stream, "%.2lf\t", hTable[i * tabular->cols + j]);
         }
-        fprintf(Stream, "%.2lf\n", hIndicators[i]);
+
+        fprintf(Stream, "\t|\t %.2lf\n", hCosts[i]);
+        if(i==0) fprintf(Stream, "\n");
     }
-    fprintf(Stream, "\n--------------------------------------\n");
-    fprintf(Stream, "Base: ");
 }
 
 void printTableauToStream(FILE* Stream, tabular_t* tabular)
@@ -85,14 +94,10 @@ void printTableauToStream(FILE* Stream, tabular_t* tabular)
 
 void freeTabular(tabular_t* tabular)
 {
-    HANDLE_ERROR(cudaHostUnregister(tabular->problem->constraintsMatrix));
-    HANDLE_ERROR(cudaHostUnregister(tabular->problem->knownTermsVector));
-    HANDLE_ERROR(cudaHostUnregister(tabular->problem->objectiveFunction));
-
     if (tabular->table != NULL)
     {
         HANDLE_ERROR(cudaFree(tabular->table));
-        HANDLE_ERROR(cudaFree(tabular->lastCol));
+        HANDLE_ERROR(cudaFree(tabular->costsVector));
     }
 
     free(tabular);

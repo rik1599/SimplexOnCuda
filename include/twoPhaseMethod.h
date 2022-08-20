@@ -1,5 +1,6 @@
 #include "tabular.cuh"
 #include "macro.h"
+#include "solver.h"
 
 #define INFEASIBLE -1
 #define UNBOUNDED -2

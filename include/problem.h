@@ -7,9 +7,9 @@
  *  Si assumono che i problemi siano tutti nella forma
  *  max cx s.t. Ax <= b
 */
-typedef struct problem
+typedef struct
 {
-    //Matrice delle costanti (linearizzata per righe)
+    //Matrice delle costanti (linearizzata per colonne)
 	TYPE* constraintsMatrix;
 
     //Vettore dei termini noti
@@ -40,9 +40,11 @@ problem_t* readProblemFromFile(FILE* file);
  * 
  * @param nVars int - numero di variabili del problema
  * @param nConstraints int - numero di vincoli del problema
+ * @param seed int - seed per la generazione, seed uguali produrranno problemi uguali
  * @return problem_t* - puntatore al problema
  */
-problem_t* generateRandomProblem(int nVars, int nConstraints);
+problem_t* generateRandomProblem(int nVars, int nConstraints, int seed);
+
 
 /** Stampa il problema su uno stream nella forma
  * max c0 x1 + ... + cn-1 xn

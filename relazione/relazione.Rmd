@@ -34,6 +34,83 @@ knitr::opts_chunk$set(echo = TRUE)
 ### Estrazione delle colonne dalla matrice
 ## Ricerca del pivot e test di ottimalità
 ## Eliminazione di Gauss
+Come accennato nell'introduzione teorica all'algoritmo del simplesso in due fasi un passo fondamentale 
+per raggiungere la soluzione consiste nell'esprimere la funzione dei costi in funzione delle variabili non in base, per fare ciò si utilizzano una serie di eliminazionei di gauss.
+
+Ignorando i dettagli del problema, ciò che si vuole fare consiste in:
+
+Dati:
+
+- Una matrice $A_{n*m}$
+
+- Un vettore di moltiplicatori M di dimensione m
+
+- Il vettore dei costi C di dimensione n
+
+Si vuole calcolare C' come:
+
+$$c'_{i} = c_{i} - \sum_{k=0}^{m} (a_{k,i} * m_{k})  \; \; \; \; \; \; 0<i<n$$
+
+L'approccio seriale è banale e consiste nello scorrimento di tutta la matrice e per ogni elemento $a_{a,b}$ si calcola il rispettivo 
+$c'_{b}$.
+
+Risulta possibile ottimizzare l'efficienza di questo algoritmo attraverso il parallelismo.
+
+### Approccio naive
+Per discutere gli approcci paralleli è bene ricordare come i dati su cui l'eliminazione di gauss deve agire sono rappresentati in memoria, ovvero:
+
+- Il vettore dei costi C è rappresentato in un vettore a se di dimensione m, con il primo elemento il valore della funzione obiettivo
+
+- il vettore dei moltiplicatori M è rappresentato da un vettore a se di dimensione naive
+
+- La matrice dei $A_{m*n}$ vincoli è linearizzata per righe, con la prima colonna contenente i termini noti
+
+Dato che la matrice è linearizzata per colonne è più semplice effettuare i ragionamenti sulla trasposta A^{t}.
+
+L'approccio più semplice per parallelizzare questo algoritmo consiste nell'utilizzare delle tiles di thread (blocchi bidimensionali) dove ciascuno di essi si occupa di
+eseguire la stessa operazione della versione seriale, dunque ogni thread in base alla sua posizione globale (posizione nella grid) aggiorna il valore della funzione obiettivo.
+
+Per come è rappresentata la matrice abbiamo che thread consecutivi accedo ad elementi consecutivi sia della matrice sia del vettore dei moltiplicatori, questo permette di sfruttare in modo naturale la coalescenza evitando accessi 
+stride se si scieglie in maniera appropriata la dimensione sull'asse x dei blocchi.
+
+Il problema di questa soluzione che la rende non ottimale è la concorrenza durante la scrittura sul vettore dei costi, infatti thread con lo stesso threadIdx.x nello stesso blocco
+accederanno in scrittura sulla stessa locazione di memoria dato che dovranno aggiornare lo stesso elemento della funzione obiettivo. Anche blocchi differenti possono accedere alla stessa locazione di memoria in scrittura, causando concorrenza,
+ questo accade quando thread di blocchi diversi lavorano sulla stessa riga della matrice, aggiornando di conseguanza lo stesso elemento della funzione obiettivo.
+
+A causa della concorrenza è necessario utilizzare l'operazione di somma atomica per evitare inconsistenze, ma questo porta ad una perdita di efficienza dato che scritture atomiche sulla stessa locazione di memoria vengono serializzate.
+
+A seconda della compute capability della scheda video utilizzata il discorso varia:
+
+-Nel caso in cui la scheda grafica disponga di compute capability superiore o uguale alla 6.0 potrebbe essere sufficiente l'approccio naive, con opportuni accorgimenti,
+dato che l'effiecienza delle operazioni atomiche permette di avere risultati paragonabili se non migliori alla migliore soluzione trovata che eviti o limiti l'utilizzo delle operazioni atomiche.
+
+-Nel caso in cui la compute capability sia inferiore alla 6.0 non è disponibile l'operazione atomica di somma di double, per tale motivo è necessario utilizzare un implementazione simulata con costi
+non triviali sulle performance, per tale motivo utilizzare l'approccio che limita le atomicadd risulta migliore dell'approccio naive.
+
+### Approccio ragionato
+L'approccio ragionato utilizza l'idea della riduzione per evitare somme atomiche concorrenti permettendo tempi ottimali anche nel caso di compute capability inferiori alla 6.0.
+
+Pensando al problema da risolvere quello che si vuole effettivamente andare a fare è ridurre delle righe opportunamente moltiplicate per un moltiplicatore e sottrarre il risultato di tale riduzione all'elemento della funzione obiettivo corrispondente a tale riga.
+
+La soluzione migliore ottenuta è la seguente:
+
+- Si utilizzano dei blocchi bidimensionali di dimensione (32,k) ed una grid di dimensione (1, roof(righeTrasposta/k))
+- Per come funziona la suddivisione in warp di un blocco si avranno warp di 32 thread consecutivi che lavorano su 32 elementi consecutivi della stessa riga della matrice
+- Ogni thread di un warp carica il proprio elemento della matrice ed il rispettivo moltiplicatore, dato che i thread del warp accedono ad elementi consecutivi della riga della trapsosta si avranno accessi coalescenti sia
+per i dati della matrice sia per i moltiplicatori.
+- Si utilizza una riduzione attraverso le primitive di comunicazione tra thread di un warp, ovvero si utilizza una riduzione intra-warp.
+- Un thread per warp aggiorna la funzione obiettivo nella locazione relativa alla riga su cui ha lavorato.
+- Si utilizza un grid stride per scorrere tutta la riga della matrice
+
+Tale soluzione permette di evitare completamente l'utilizzo delle operazioni di somma atomica.
+
+Un ulteriore ottimizzazione consiste nell'eseguire una somma prima di passare alla riduzione: ogni thread esegue già una somma quando carica il proprio valore della matrice, caricandone due invece che 1.
+
+Rimane un problema di questa soluzione: quando il risultato di una riduzione viene sottratto nella funzione obiettivo si ha una divergenza nel warp, quello che invece sarebbe più efficiente sarebbe
+ di fare eseguire l'aggiornamento da un unico warp (invece che tanti quanti l'altezza del blocco) ma qualsiasi soluzione provata aggiunge un overhead superiore al tempo impiegato lasciando l'aggiornamento a warp diversi.
+
+
+
 ## Aggiornamento della tabella
 
 # Risultati sperimentali
