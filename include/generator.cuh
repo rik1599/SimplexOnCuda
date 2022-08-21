@@ -14,7 +14,7 @@
  * @param maximum - limite superiore alla generazione degli elementi
  * @return - lo stream su cui viene eseguita la generazione
  */
-cudaStream_t *generateVectorInParallelAsync(TYPE *dst, int size, unsigned long long seed, double minimum, double maximum);
+cudaStream_t *generateVectorInParallelAsync(TYPE *dst, int size, unsigned int, double minimum, double maximum);
 
 /**
  * Genera una matrice casuale attraverso un kernel cuda in una locazione di memoria specificata, la matrice è linearizzata per colonne
@@ -28,4 +28,4 @@ cudaStream_t *generateVectorInParallelAsync(TYPE *dst, int size, unsigned long l
  * @param maximum -limite superiore alla generazione degli elementi
  * @return - lo stream su cui viene eseguita la generazione
  */
-cudaStream_t *generateMatrixInParallelAsync(TYPE *dst, int width, int height, unsigned long long seed, double minimum, double maximum);
+cudaStream_t *generateMatrixInParallelAsync(TYPE *dst, int width, int height, unsigned int, double minimum, double maximum);

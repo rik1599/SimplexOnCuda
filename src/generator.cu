@@ -6,7 +6,7 @@
 #define BL(N) min((N + THREADS - 1) / THREADS, 1024)
 
 /*==================== Kernel per la generazione =====================*/
-__global__ void generateMatrixLinear(TYPE *outMatrix, int rows, int cols, size_t pitch, unsigned long long seed, double minimum, double maximum)
+__global__ void generateMatrixLinear(TYPE *outMatrix, int rows, int cols, size_t pitch, unsigned int seed, double minimum, double maximum)
 {
     curandState state;
         // Grid stride loop per migliore scalabilità
@@ -21,7 +21,7 @@ __global__ void generateMatrixLinear(TYPE *outMatrix, int rows, int cols, size_t
 }
 
 // discorso equivalente a quello sopra
-__global__ void generateVector(TYPE *outVet, int size, unsigned long long seed, double minimum, double maximum)
+__global__ void generateVector(TYPE *outVet, int size, unsigned int seed, double minimum, double maximum)
 {
     curandState state;
     for (int id = blockDim.x * blockIdx.x + threadIdx.x; id < size; id += blockDim.x * gridDim.x)
@@ -33,7 +33,7 @@ __global__ void generateVector(TYPE *outVet, int size, unsigned long long seed, 
 
 /*================== Funzioni per la generazione =======================*/
 
-cudaStream_t *generateVectorInParallelAsync(TYPE *dev_array, int size, unsigned long long seed, double minimum, double maximum)
+cudaStream_t *generateVectorInParallelAsync(TYPE *dev_array, int size, unsigned int seed, double minimum, double maximum)
 {
     cudaStream_t *stream = (cudaStream_t *)malloc(sizeof(cudaStream_t));
     HANDLE_ERROR(cudaStreamCreate(stream));
@@ -43,7 +43,7 @@ cudaStream_t *generateVectorInParallelAsync(TYPE *dev_array, int size, unsigned 
     return stream;
 }
 
-cudaStream_t *generateMatrixInParallelAsync(TYPE *dst, int width, int height, unsigned long long seed, double minimum, double maximum)
+cudaStream_t *generateMatrixInParallelAsync(TYPE *dst, int width, int height, unsigned int seed, double minimum, double maximum)
 {
     size_t pitch;
     TYPE *dev_matrix;

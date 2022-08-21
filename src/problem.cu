@@ -50,7 +50,7 @@ problem_t* readProblemFromFile(FILE* file)
     return problem;
 }
 
-problem_t* generateRandomProblem(int width, int height, int seed)
+problem_t* generateRandomProblem(int width, int height, unsigned int seed)
 {
     
     /**
@@ -66,9 +66,9 @@ problem_t* generateRandomProblem(int width, int height, int seed)
     //un proprio seed generato casualmente a partire da quello di partenza, facendo in questo modo abbiamo la ripetibilità.
     srand(seed);
 
-    int seedOne = rand();
-    int seedTwo = rand();
-    int seedThree = rand();
+    unsigned int seedOne = rand();
+    unsigned int seedTwo = rand();
+    unsigned int seedThree = rand();
 
     #ifdef DEBUG
         printf("Attualmente i seed sono: %d, %d, %d\n", seedOne, seedTwo, seedThree);
@@ -128,6 +128,17 @@ problem_t* generateRandomProblem(int width, int height, int seed)
 
     return problem;
 }
+
+problem_t* readRandomProblemFromFile(FILE* file){
+    int nVars = 0;
+    int nConstraints = 0;
+    unsigned int seed = 0;
+
+    fscanf_s(file, "%d %d %u", &nVars, &nConstraints, &seed);
+
+    return generateRandomProblem(nVars, nConstraints, seed);
+}
+
 
 void printProblemToStream(FILE* Stream, problem_t* problem)
 {
