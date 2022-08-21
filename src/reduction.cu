@@ -183,7 +183,7 @@ __global__ void deviceReduceKernel(TYPE *g_values, int N)
         g_values[blockIdx.x] = maxVal;
 }
 
-bool isLessThanZero(TYPE *g_vet, unsigned int size)
+bool isLessOrEqualThanZero(TYPE *g_vet, unsigned int size)
 {
     TYPE *g_vetCpy;
     HANDLE_ERROR(cudaMalloc((void **)&g_vetCpy, BYTE_SIZE(size)));

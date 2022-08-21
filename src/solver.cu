@@ -27,7 +27,7 @@ __global__ void copyColumn(matrixInfo matInfo, int colToCpy, TYPE *dst)
     }
 }
 
-__global__ void updateVariables(matrixInfo matInfo, double *colPivot, double *rowPivot, int colPivotIndex, double pivot)
+__global__ void updateContraintsMatrix(matrixInfo matInfo, double *colPivot, double *rowPivot, int colPivotIndex, double pivot)
 {
     // coordinate
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -58,7 +58,7 @@ __global__ void updateCostsVector(TYPE *costVector, int size, double *colPivot, 
     }
 }
 
-__inline__ void updateAll(tabular_t *tabular, TYPE *colPivot, int colPivotIndex, TYPE *rowPivot, TYPE minCosts)
+__inline__ void updateTableau(tabular_t *tabular, TYPE *colPivot, int colPivotIndex, TYPE *rowPivot, TYPE minCosts)
 {
     matrixInfo matInfo = {tabular->table, tabular->pitch, tabular->rows, tabular->cols};
 
@@ -74,7 +74,7 @@ __inline__ void updateAll(tabular_t *tabular, TYPE *colPivot, int colPivotIndex,
 
     dim3 block(TILE_DIM, TILE_DIM);
     dim3 grid(BLOCK_DIM(tabular->cols), BLOCK_DIM(tabular->rows));
-    updateVariables<<<grid, block, 0, streams[0]>>>(matInfo, colPivot, rowPivot, colPivotIndex, pivot);
+    updateContraintsMatrix<<<grid, block, 0, streams[0]>>>(matInfo, colPivot, rowPivot, colPivotIndex, pivot);
 
     updateCostsVector<<<BL(tabular->rows), THREADS, 0, streams[1]>>>(tabular->costsVector, tabular->rows, colPivot, minCosts, pivot);
 
@@ -93,20 +93,22 @@ int solve(tabular_t *tabular, int *base)
     unsigned int colPivotIndex;
     unsigned int rowPivotIndex;
 
-    TYPE minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
-    while (compare(minCosts) < 0)
+    TYPE minCosts;
+    while (compare(minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex)) < 0)
     {
-        HANDLE_ERROR(cudaMemcpy(rowPivot, ROW(tabular->constraintsMatrix, rowPivotIndex, tabular->pitch), BYTE_SIZE(tabular->cols), cudaMemcpyDefault));
+        HANDLE_ERROR(cudaMemcpy(
+            rowPivot,
+            ROW(tabular->constraintsMatrix, rowPivotIndex, tabular->pitch),
+            BYTE_SIZE(tabular->cols),
+            cudaMemcpyDefault));
 
-        if (isLessThanZero(rowPivot, tabular->cols))
+        if (isLessOrEqualThanZero(rowPivot, tabular->cols))
             return UNBOUNDED;
-            
+
         minElement(tabular->knownTermsVector, rowPivot, tabular->cols, &colPivotIndex);
         base[colPivotIndex] = rowPivotIndex;
 
-        updateAll(tabular, colPivot, colPivotIndex, rowPivot, minCosts);
-
-        minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
+        updateTableau(tabular, colPivot, colPivotIndex, rowPivot, minCosts);
 
 #ifdef DEBUG
         printTableauToStream(stdout, tabular, base);
