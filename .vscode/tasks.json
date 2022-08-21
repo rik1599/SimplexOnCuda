@@ -42,6 +42,21 @@
                 "kind": "test",
                 "isDefault": false
             }
+        },
+        {
+            "label": "Build & Execute",
+            "type": "shell",
+            "command": "${workspaceFolder}\\debug\\SimplexOnCuda.exe",
+            "args": [
+                "${workspaceFolder}\\data\\examples\\smallProblem.txt"
+            ],
+            "dependsOn": [
+                "Build"
+            ],
+            "group": {
+                "kind": "test",
+                "isDefault": false
+            }
         }
     ]
 }
