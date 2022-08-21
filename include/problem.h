@@ -42,7 +42,7 @@ problem_t* readProblemFromFile(FILE* file);
  * @param file FILE* - puntatore al file da cui leggere i dati
  * @return problem_t* - puntatore al problema
 */
-problem_t* readProblemFromFile(FILE* file);
+problem_t* readRandomProblemFromFile(FILE* file);
 
 /** Genera casualmente un problema dati il numero di variabili e di vincoli
  * 

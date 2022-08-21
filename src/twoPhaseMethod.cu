@@ -1,8 +1,6 @@
 #include "twoPhaseMethod.h"
 #include "error.cuh"
 
-#define THREADS 512
-#define BL(N) min((N + THREADS - 1) / THREADS, 1024)
 
 /** Inserisce due matrici di indentità in coda a una matrice
  *  Si suppone sia linearizzata per colonne (non penso sia possibile generalizzare)
@@ -67,6 +65,21 @@ __global__ void negateVector(TYPE *vector, int size)
     }
 }
 
+/**
+ * Carica due elementi dalla matrice a distanza un blocco:
+ * -se puo caricarne 2 li somma
+ * -se può caricarne 1 lo carica e basta
+ * -se non può caricarne nessuno ritorna 0 
+ */
+__inline__ __device__ TYPE loadValueWithPreSumZero(TYPE* mat, TYPE* coefficients, int idX, int idY, size_t pitch, int rows, int cols){
+    return (idX + blockDim.x < cols ?
+                                      *(INDEX(mat, idY, idX, pitch)) * coefficients[idX]                                    //doppio caaricamento
+                                            + *(INDEX(mat, idY, idX + blockDim.x, pitch)) * coefficients[idX + blockDim.x]  
+                                    : (idX < cols ?
+                                                    *(INDEX(mat, idY, idX, pitch)) * coefficients[idX]                      //caricamento singolo
+                                                  : 0));                                                                    //zero
+}
+
 /** Implementa in parallelo operazioni del tipo
  * mat[0] = mat[0] - (\sum_{i=i}^{rows-1} coefficient[i]*mat[i])
  *
@@ -99,11 +112,7 @@ __global__ void gaussianElimination(TYPE *mat, TYPE *objectiveFunction, TYPE *co
         {
 
             // prendiamo il valore per questo specifico thread sommando nel caricamento (stando attenti a settare a zero il valore)
-            TYPE value = idX < cols && idX + blockDim.x < cols ? *(INDEX(mat, idY, idX, pitch)) * coefficients[idX] +
-                                                                     *(INDEX(mat, idY, idX + blockDim.x, pitch)) * coefficients[idX + blockDim.x]
-                                                               : (idX < cols ? *(INDEX(mat, idY, idX, pitch)) * coefficients[idX]
-                                                                             : 0);
-
+            TYPE value = loadValueWithPreSumZero(mat, coefficients, idX, idY, pitch, rows, cols);
             __syncthreads();
 
             // riduzione intra warp
@@ -139,9 +148,7 @@ __global__ void gaussianEliminationNaive(TYPE *mat, TYPE *objectiveFunction, TYP
     {
         for (int idY = threadIdx.y + blockIdx.y * blockDim.y; idY < rows; idY += gridDim.y * blockDim.y)
         {
-            atomicAdd(&objectiveFunction[idY], -(idX + blockDim.x < cols ? ((*(INDEX(mat, idY, idX, pitch)) * coefficients[idX]) +
-                                                                            (*(INDEX(mat, idY, (idX + blockDim.x), pitch))) * coefficients[idX + blockDim.x])
-                                                                         : (*(INDEX(mat, idY, idX, pitch))) * coefficients[idX]));
+            atomicAdd(&objectiveFunction[idY], -loadValueWithPreSumZero(mat, coefficients, idX, idY, pitch, rows, cols));
         }
     }
 }
