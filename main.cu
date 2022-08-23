@@ -41,7 +41,8 @@ int main(int argc, const char *argv[])
         printf("Genero problema casuale\n");
         vars = atoi(argv[2]);
         constraints = atoi(argv[3]);
-        seed = argc > 4 ? atoi(argv[4]) : time(NULL);
+        srand(time(NULL));
+        seed = argc > 4 ? atoi(argv[4]) : rand();
         printf("Seed: %d\n", seed);
         casuallyGenerated = true;
         problem = generateRandomProblem(vars, constraints, seed);
