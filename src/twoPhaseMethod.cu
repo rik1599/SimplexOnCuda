@@ -2,6 +2,8 @@
 #include "error.cuh"
 #include "gaussian.cuh"
 
+#define THREADS 512
+#define BL(N) min((N + THREADS - 1) / THREADS, 1024)
 
 /** Inserisce due matrici di indentità in coda a una matrice
  *  Si suppone sia linearizzata per colonne (non penso sia possibile generalizzare)
@@ -200,7 +202,7 @@ int phase1(tabular_t *tabular, int *base_h, int *base_dev)
     // Fase 4: controllo infattibilità
     TYPE firstKnownTermsValue;
     HANDLE_ERROR(cudaMemcpy(&firstKnownTermsValue, tabular->costsVector, BYTE_SIZE(1), cudaMemcpyDeviceToHost));
-    if (firstKnownTermsValue < 0)
+    if (compare(firstKnownTermsValue) < 0)
         return INFEASIBLE;
 
     // Fase 5: controllo degenere: se è presente in base un valore x tale che n+m <= x < n+2m, il problema è degenere

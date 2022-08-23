@@ -21,7 +21,10 @@
             "command": "cuda-memcheck",
             "args": [
                 "${workspaceFolder}\\debug\\SimplexOnCuda.exe",
-                "${workspaceFolder}\\data\\examples\\smallProblem.txt"
+                "-r",
+                "5",
+                "5"
+                //"${workspaceFolder}\\data\\examples\\smallProblem.txt"
             ],
             "problemMatcher": [],
             "group": {

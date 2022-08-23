@@ -18,37 +18,45 @@ int main(int argc, const char *argv[])
     problem_t *problem;
     bool casuallyGenerated = false;
 
+    if (argc < 2)
+    {
+        fprintf_s(stderr, "Argomenti insufficienti\n");
+        exit(-1);
+    }
 
-    if (argc == 2)
+    if (strcmp(argv[1], "-f") == 0)
     {
         printf("Leggo problema da file\n");
-        if (fopen_s(&file, argv[1], "r") != 0)
+        if (fopen_s(&file, argv[2], "r") != 0)
         {
-            fprintf(stderr, "Errore nell'apertura del file");
+            fprintf(stderr, "Errore nell'apertura del file\n");
             exit(-1);
         }
 
         problem = readProblemFromFile(file);
         fclose(file);
     }
-    else if (argc == 3)
+    else if (strcmp(argv[1], "-r") == 0)
     {
         printf("Genero problema casuale\n");
-        vars = atoi(argv[1]);
-        constraints = atoi(argv[2]);
-
-        //generiamo casualmente un seed
-        srand(time(NULL));
-        seed = rand();
-        problem = generateRandomProblem(vars, constraints, seed);
+        vars = atoi(argv[2]);
+        constraints = atoi(argv[3]);
+        seed = argc > 4 ? atoi(argv[4]) : time(NULL);
+        printf("Seed: %d\n", seed);
         casuallyGenerated = true;
+        problem = generateRandomProblem(vars, constraints, seed);
     }
-    else
+    else if (strcmp(argv[1], "-rf") == 0)
     {
-        fprintf_s(stderr, "Argomenti mancanti!");
-        exit(-1);
+        printf("Leggo dati generatore da file\n");
+        if (fopen_s(&file, argv[2], "r") != 0)
+        {
+            fprintf(stderr, "Errore nell'apertura del file");
+            exit(-1);
+        }
+        problem = readRandomProblemFromFile(file);
+        fclose(file);
     }
-
 #ifdef DEBUG
     printProblemToStream(stdout, problem);
 #endif
@@ -58,7 +66,7 @@ int main(int argc, const char *argv[])
     FILE *fileSolution = NULL;
     if (fopen_s(&fileSolution, "solution.txt", "w") != 0)
     {
-        fprintf(stderr, "Errore nell'apertura del file");
+        fprintf(stderr, "Errore nell'apertura del file\n");
         exit(-1);
     }
 
@@ -88,17 +96,18 @@ int main(int argc, const char *argv[])
 
         fclose(fileSolution);
 
-        //se il problema era casuale ci salviamo i dati per la generazione
-        if(casuallyGenerated){
-            //salviamo il file con nome l'ora attuale... pensare a qualcosa di meglio
+        // se il problema era casuale ci salviamo i dati per la generazione
+        if (casuallyGenerated)
+        {
+            // salviamo il file con nome l'ora attuale... pensare a qualcosa di meglio
             FILE *saveFile;
             fopen_s(&saveFile, "randomProblemData.txt", "w");
-            fprintf_s(saveFile, "%d %d %ld", vars, constraints, seed);
-            fclose(saveFile);  
+            fprintf_s(saveFile, "%d %d %d", vars, constraints, seed);
+            fclose(saveFile);
         }
         break;
     }
-    
+
     free(solution);
     freeProblem(problem);
 }

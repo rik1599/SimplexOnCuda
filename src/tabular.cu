@@ -79,7 +79,7 @@ __inline__ void print(FILE* Stream, tabular_t* tabular)
             fprintf(Stream, "%.2lf\t", hTable[i * tabular->cols + j]);
         }
 
-        fprintf(Stream, "\t|\t %.2lf\n", hCosts[i]);
+        fprintf(Stream, "\t|\t %.11lf\n", hCosts[i]);
         if(i==0) fprintf(Stream, "\n");
     }
 }
