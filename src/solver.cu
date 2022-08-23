@@ -29,20 +29,13 @@ __global__ void copyColumn(matrixInfo matInfo, int colToCpy, TYPE *dst)
 
 __global__ void updateContraintsMatrix(matrixInfo matInfo, double *colPivot, double *rowPivot, int colPivotIndex, double pivot)
 {
-    // coordinate
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    // dimensioni griglia
-    int nx = blockDim.x * gridDim.x;
-    int ny = blockDim.y * gridDim.y;
-
     double *pRow;
-    for (int col = x; col < matInfo.cols; col += nx)
+    char* pMat = (char*)matInfo.mat;
+    for (int col = blockIdx.x * blockDim.x + threadIdx.x; col < matInfo.cols; col += blockDim.x * gridDim.x)
     {
-        for (int row = y; row < matInfo.rows; row += ny)
+        for (int row = blockIdx.y * blockDim.y + threadIdx.y; row < matInfo.rows; row += blockDim.y * gridDim.y)
         {
-            pRow = ROW(matInfo.mat, row, matInfo.pitch);
+            pRow = (double*)(pMat + row * matInfo.pitch);
             pRow[col] = col == colPivotIndex ? pRow[col] / pivot : fma(-rowPivot[col] / pivot, colPivot[row], pRow[col]);
         }
     }
@@ -93,8 +86,8 @@ int solve(tabular_t *tabular, int *base)
     unsigned int colPivotIndex;
     unsigned int rowPivotIndex;
 
-    TYPE minCosts;
-    while (compare(minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex)) < 0)
+    TYPE minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
+    while (compare(minCosts) < 0)
     {
         HANDLE_ERROR(cudaMemcpy(
             rowPivot,
@@ -109,6 +102,8 @@ int solve(tabular_t *tabular, int *base)
         base[colPivotIndex] = rowPivotIndex;
 
         updateTableau(tabular, colPivot, colPivotIndex, rowPivot, minCosts);
+
+        minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
 
 #ifdef DEBUG
         printTableauToStream(stdout, tabular, base);

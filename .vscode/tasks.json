@@ -26,6 +26,9 @@
                 "5"
                 //"${workspaceFolder}\\data\\examples\\smallProblem.txt"
             ],
+            "options": {
+                "cwd": "${workspaceFolder}\\debug"
+            },
             "problemMatcher": [],
             "group": {
                 "kind": "test",
@@ -40,6 +43,9 @@
                 "${workspaceFolder}\\debug\\SimplexOnCuda.exe",
                 "${workspaceFolder}\\data\\examples\\smallProblem.txt"
             ],
+            "options": {
+                "cwd": "${workspaceFolder}\\debug"
+            },
             "problemMatcher": [],
             "group": {
                 "kind": "test",
@@ -51,11 +57,17 @@
             "type": "shell",
             "command": "${workspaceFolder}\\debug\\SimplexOnCuda.exe",
             "args": [
-                "${workspaceFolder}\\data\\examples\\smallProblem.txt"
+                "-rs",
+                "6",
+                "5"
+                //"${workspaceFolder}\\data\\examples\\smallProblem.txt"
             ],
             "dependsOn": [
                 "Build"
             ],
+            "options": {
+                "cwd": "${workspaceFolder}\\debug"
+            },
             "group": {
                 "kind": "test",
                 "isDefault": false

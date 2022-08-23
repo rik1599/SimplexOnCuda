@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <time.h>
 #include "problem.h"
 #include "twoPhaseMethod.h"
 #include "macro.h"
@@ -16,7 +17,6 @@ int main(int argc, const char *argv[])
     int constraints;
     int seed = 0;
     problem_t *problem;
-    bool casuallyGenerated = false;
 
     if (argc < 2)
     {
@@ -44,8 +44,30 @@ int main(int argc, const char *argv[])
         srand(time(NULL));
         seed = argc > 4 ? atoi(argv[4]) : rand();
         printf("Seed: %d\n", seed);
-        casuallyGenerated = true;
         problem = generateRandomProblem(vars, constraints, seed);
+    }
+    else if (strcmp(argv[1], "-rs") == 0)
+    {
+        printf("Genero problema casuale\n");
+        vars = atoi(argv[2]);
+        constraints = atoi(argv[3]);
+        srand(time(NULL));
+        seed = argc > 4 ? atoi(argv[4]) : rand();
+        printf("Seed: %d\n", seed);
+        problem = generateRandomProblem(vars, constraints, seed);
+
+        FILE *saveFile;
+        char fileName[50];
+        
+        time_t timer = time(NULL);
+        char time_str[20];
+        struct tm* tm_info = localtime(&timer);
+        strftime(time_str, 20, "%Y%m%d%H%M", tm_info);
+
+        sprintf_s(fileName, "..\\data\\examples\\random_%s.txt", time_str);
+        fopen_s(&saveFile, fileName, "w");
+        fprintf_s(saveFile, "%d %d %d", vars, constraints, seed);
+        fclose(saveFile);
     }
     else if (strcmp(argv[1], "-rf") == 0)
     {
@@ -65,7 +87,7 @@ int main(int argc, const char *argv[])
     TYPE *solution = (TYPE *)(malloc(BYTE_SIZE(problem->vars)));
     TYPE optimalValue = 0;
     FILE *fileSolution = NULL;
-    if (fopen_s(&fileSolution, "solution.txt", "w") != 0)
+    if (fopen_s(&fileSolution, "..\\data\\solution.txt", "w") != 0)
     {
         fprintf(stderr, "Errore nell'apertura del file\n");
         exit(-1);
@@ -96,17 +118,6 @@ int main(int argc, const char *argv[])
         fprintf_s(fileSolution, "\nOptimal value: %lf\n", optimalValue);
 
         fclose(fileSolution);
-
-        // se il problema era casuale ci salviamo i dati per la generazione
-        if (casuallyGenerated)
-        {
-            // salviamo il file con nome l'ora attuale... pensare a qualcosa di meglio
-            FILE *saveFile;
-            fopen_s(&saveFile, "randomProblemData.txt", "w");
-            fprintf_s(saveFile, "%d %d %d", vars, constraints, seed);
-            fclose(saveFile);
-        }
-        break;
     }
 
     free(solution);
