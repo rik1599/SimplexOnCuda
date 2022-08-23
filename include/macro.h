@@ -1,6 +1,6 @@
 #pragma once
 
-#define DEBUG
+//#define DEBUG
 
 #define TYPE double
 
@@ -38,5 +38,4 @@ __host__ __device__ __inline__ int compare(double x, double y = 0.0, double epsi
     {
         return 1;
     }
-    
 }

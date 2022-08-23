@@ -1,8 +1,8 @@
 #include <stdio.h>
+#include <time.h>
 #include "problem.h"
 #include "twoPhaseMethod.h"
 #include "macro.h"
-#include "time.h"
 
 void setupDevice();
 
@@ -15,34 +15,71 @@ int main(int argc, const char *argv[])
     FILE *file = NULL;
     int vars;
     int constraints;
+    int seed = 0;
     problem_t *problem;
 
-    if (argc == 2)
+    if (argc < 2)
+    {
+        fprintf_s(stderr, "Argomenti insufficienti\n");
+        exit(-1);
+    }
+
+    if (strcmp(argv[1], "-f") == 0)
     {
         printf("Leggo problema da file\n");
-        if (fopen_s(&file, argv[1], "r") != 0)
+        if (fopen_s(&file, argv[2], "r") != 0)
         {
-            fprintf(stderr, "Errore nell'apertura del file");
+            fprintf(stderr, "Errore nell'apertura del file\n");
             exit(-1);
         }
 
         problem = readProblemFromFile(file);
         fclose(file);
     }
-    else if (argc == 3)
+    else if (strcmp(argv[1], "-r") == 0)
     {
         printf("Genero problema casuale\n");
-        vars = atoi(argv[1]);
-        constraints = atoi(argv[2]);
-
-        problem = generateRandomProblem(vars, constraints, 0);
+        vars = atoi(argv[2]);
+        constraints = atoi(argv[3]);
+        srand(time(NULL));
+        seed = argc > 4 ? atoi(argv[4]) : rand();
+        printf("Seed: %d\n", seed);
+        problem = generateRandomProblem(vars, constraints, seed);
     }
-    else
+    else if (strcmp(argv[1], "-rs") == 0)
     {
-        fprintf_s(stderr, "Argomenti mancanti!");
-        exit(-1);
-    }
+        printf("Genero problema casuale\n");
+        vars = atoi(argv[2]);
+        constraints = atoi(argv[3]);
+        srand(time(NULL));
+        seed = argc > 4 ? atoi(argv[4]) : rand();
+        printf("Seed: %d\n", seed);
+        problem = generateRandomProblem(vars, constraints, seed);
 
+        FILE *saveFile;
+        char fileName[50];
+        
+        time_t timer = time(NULL);
+        char time_str[20];
+        struct tm* tm_info = localtime(&timer);
+        strftime(time_str, 20, "%Y%m%d%H%M", tm_info);
+
+        sprintf_s(fileName, "..\\data\\examples\\random_%s.txt", time_str);
+        fopen_s(&saveFile, fileName, "w");
+        fprintf_s(saveFile, "%d %d %d", vars, constraints, seed);
+        fclose(saveFile);
+    }
+    else if (strcmp(argv[1], "-rf") == 0)
+    {
+        printf("Leggo dati generatore da file\n");
+        if (fopen_s(&file, argv[2], "r") != 0)
+        {
+            fprintf(stderr, "Errore nell'apertura del file");
+            exit(-1);
+        }
+        problem = readRandomProblemFromFile(file);
+        fclose(file);
+    }
 #ifdef DEBUG
     printProblemToStream(stdout, problem);
 #endif
@@ -50,9 +87,9 @@ int main(int argc, const char *argv[])
     TYPE *solution = (TYPE *)(malloc(BYTE_SIZE(problem->vars)));
     TYPE optimalValue = 0;
     FILE *fileSolution = NULL;
-    if (fopen_s(&fileSolution, "solution.txt", "w") != 0)
+    if (fopen_s(&fileSolution, "..\\data\\solution.txt", "w") != 0)
     {
-        fprintf(stderr, "Errore nell'apertura del file");
+        fprintf(stderr, "Errore nell'apertura del file\n");
         exit(-1);
     }
 
@@ -72,17 +109,17 @@ int main(int argc, const char *argv[])
         break;
 
     default:
-        printf("Problem solved!\n");
+        printf("\nProblem solved!\n");
 
         for (size_t i = 0; i < problem->vars; i++)
         {
             fprintf_s(fileSolution, "%lf\n", solution[i]);
         }
         fprintf_s(fileSolution, "\nOptimal value: %lf\n", optimalValue);
-        break;
+
+        fclose(fileSolution);
     }
-    fclose(fileSolution);
-    
+
     free(solution);
     freeProblem(problem);
 }

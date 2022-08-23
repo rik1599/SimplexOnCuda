@@ -21,8 +21,14 @@
             "command": "cuda-memcheck",
             "args": [
                 "${workspaceFolder}\\debug\\SimplexOnCuda.exe",
-                "${workspaceFolder}\\data\\examples\\smallProblem.txt"
+                "-r",
+                "5",
+                "5"
+                //"${workspaceFolder}\\data\\examples\\smallProblem.txt"
             ],
+            "options": {
+                "cwd": "${workspaceFolder}\\debug"
+            },
             "problemMatcher": [],
             "group": {
                 "kind": "test",
@@ -37,7 +43,31 @@
                 "${workspaceFolder}\\debug\\SimplexOnCuda.exe",
                 "${workspaceFolder}\\data\\examples\\smallProblem.txt"
             ],
+            "options": {
+                "cwd": "${workspaceFolder}\\debug"
+            },
             "problemMatcher": [],
+            "group": {
+                "kind": "test",
+                "isDefault": false
+            }
+        },
+        {
+            "label": "Build & Execute",
+            "type": "shell",
+            "command": "${workspaceFolder}\\debug\\SimplexOnCuda.exe",
+            "args": [
+                "-rs",
+                "6",
+                "5"
+                //"${workspaceFolder}\\data\\examples\\smallProblem.txt"
+            ],
+            "dependsOn": [
+                "Build"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}\\debug"
+            },
             "group": {
                 "kind": "test",
                 "isDefault": false
