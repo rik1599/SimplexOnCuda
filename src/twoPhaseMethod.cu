@@ -2,8 +2,6 @@
 #include "error.cuh"
 #include "gaussian.cuh"
 
-#define THREADS 512
-#define BL(N) min((N + THREADS - 1) / THREADS, 1024)
 
 /** Inserisce due matrici di indentità in coda a una matrice
  *  Si suppone sia linearizzata per colonne (non penso sia possibile generalizzare)

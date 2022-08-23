@@ -36,6 +36,14 @@ typedef struct
 */
 problem_t* readProblemFromFile(FILE* file);
 
+/** Legge il problema da un file sottoforma di dati necessari per generarlo con il generatore, i file sono della forma:
+ * nvars ncols seed
+ * 
+ * @param file FILE* - puntatore al file da cui leggere i dati
+ * @return problem_t* - puntatore al problema
+*/
+problem_t* readRandomProblemFromFile(FILE* file);
+
 /** Genera casualmente un problema dati il numero di variabili e di vincoli
  * 
  * @param nVars int - numero di variabili del problema
@@ -43,7 +51,7 @@ problem_t* readProblemFromFile(FILE* file);
  * @param seed int - seed per la generazione, seed uguali produrranno problemi uguali
  * @return problem_t* - puntatore al problema
  */
-problem_t* generateRandomProblem(int nVars, int nConstraints, int seed);
+problem_t* generateRandomProblem(int nVars, int nConstraints, unsigned int seed);
 
 
 /** Stampa il problema su uno stream nella forma

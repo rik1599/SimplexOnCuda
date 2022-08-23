@@ -14,7 +14,10 @@ int main(int argc, const char *argv[])
     FILE *file = NULL;
     int vars;
     int constraints;
+    int seed = 0;
     problem_t *problem;
+    bool casuallyGenerated = false;
+
 
     if (argc == 2)
     {
@@ -34,7 +37,11 @@ int main(int argc, const char *argv[])
         vars = atoi(argv[1]);
         constraints = atoi(argv[2]);
 
-        problem = generateRandomProblem(vars, constraints, 0);
+        //generiamo casualmente un seed
+        srand(time(NULL));
+        seed = rand();
+        problem = generateRandomProblem(vars, constraints, seed);
+        casuallyGenerated = true;
     }
     else
     {
@@ -78,9 +85,19 @@ int main(int argc, const char *argv[])
             fprintf_s(fileSolution, "%lf\n", solution[i]);
         }
         fprintf_s(fileSolution, "\nOptimal value: %lf\n", optimalValue);
+
+        fclose(fileSolution);
+
+        //se il problema era casuale ci salviamo i dati per la generazione
+        if(casuallyGenerated){
+            //salviamo il file con nome l'ora attuale... pensare a qualcosa di meglio
+            FILE *saveFile;
+            fopen_s(&saveFile, "randomProblemData.txt", "w");
+            fprintf_s(saveFile, "%d %d %ld", vars, constraints, seed);
+            fclose(saveFile);  
+        }
         break;
     }
-    fclose(fileSolution);
     
     free(solution);
     freeProblem(problem);

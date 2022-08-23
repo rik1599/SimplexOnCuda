@@ -50,22 +50,25 @@ problem_t* readProblemFromFile(FILE* file)
     return problem;
 }
 
-problem_t* generateRandomProblem(int width, int height, int seed)
+problem_t* generateRandomProblem(int width, int height, unsigned int seed)
 {
     
-    /*L'idea è quella di generare i tre vettori utilizzando 
-    tre stream e poi trasferire la matrice creata in memoria
-    (per una questione di uniformità del codice e della procedura di test)
+    /**
+     * L'idea è quella di generare i tre vettori utilizzando 
+     * tre stream e poi trasferire la matrice creata in memoria
+     * (per una questione di uniformità del codice e della procedura di test)
     */
 
     //allocazione problema in memoria
     problem_t* problem = mallocProblem(width, height);                           
     
-    //dal seed iniziale generiamo tre seed di partenza per i kernel generatori.
+    //dal seed iniziale generiamo tre seed di partenza per i kernel generatori: ogni generatore avrà
+    //un proprio seed generato casualmente a partire da quello di partenza, facendo in questo modo abbiamo la ripetibilità.
     srand(seed);
-    int seedOne = rand();
-    int seedTwo = rand() + problem->constraints*problem->vars;
-    int seedThree = rand() + problem->constraints*problem->vars + problem->constraints;
+
+    unsigned int seedOne = rand();
+    unsigned int seedTwo = rand();
+    unsigned int seedThree = rand();
 
     #ifdef DEBUG
         printf("Attualmente i seed sono: %d, %d, %d\n", seedOne, seedTwo, seedThree);
@@ -76,10 +79,18 @@ problem_t* generateRandomProblem(int width, int height, int seed)
     HANDLE_ERROR(cudaHostRegister(problem->objectiveFunction, BYTE_SIZE(problem->vars), cudaHostRegisterDefault));
     HANDLE_ERROR(cudaHostRegister(problem->knownTermsVector, BYTE_SIZE(problem->constraints), cudaHostRegisterDefault));
 
+    //utilizziamo la memoria mapped per i due vettori
+    TYPE *objectiveFunction_map;   
+    TYPE *knownTermsVector_map;
+
+    HANDLE_ERROR(cudaHostGetDevicePointer(&objectiveFunction_map, problem->objectiveFunction, 0));
+    HANDLE_ERROR(cudaHostGetDevicePointer(&knownTermsVector_map, problem->knownTermsVector, 0));
+
     /*
-    * Generazione della matrice, se si volesse tornare alla linearizzazione per colonne => invertire costraints e vars
+    * Generazione della matrice, se si volesse tornare alla linearizzazione per righe => invertire costraints e vars
     */
-    cudaStream_t* streamMatrice = generateMatrixInParallelAsync(problem->constraintsMatrix,
+    cudaStream_t *streamMatrice = generateMatrixInParallelAsync(
+                                problem->constraintsMatrix,
                                 problem->constraints, //dato che la vogliamo linearizzata per colonne generiamo una trasposta
                                 problem->vars,
                                 seedThree,
@@ -87,16 +98,16 @@ problem_t* generateRandomProblem(int width, int height, int seed)
                                 MAXIMUM_GENERATION);
 
     //Generazione casuale termini noti
-    cudaStream_t* streamKnownTermsVector = 
-                generateVectorInParallelAsync(problem->knownTermsVector,
+    cudaStream_t *streamKnownTermsVector = generateVectorInParallelAsync(
+                                            knownTermsVector_map,
                                             problem->constraints,
                                             (unsigned long long) seedOne,
                                             MINIMUM_GENERATION,
                                             MAXIMUM_GENERATION);
 
     //Generazione casuale funzione obiettivo
-    cudaStream_t* streamObjectiveFunction =
-                generateVectorInParallelAsync(problem->objectiveFunction,
+    cudaStream_t* streamObjectiveFunction = generateVectorInParallelAsync(
+                                                objectiveFunction_map,
                                                 problem->vars,
                                                 (unsigned long long) seedTwo,
                                                 MINIMUM_GENERATION,
@@ -105,6 +116,7 @@ problem_t* generateRandomProblem(int width, int height, int seed)
     //sincronizziamo tutti gli stream
     HANDLE_KERNEL_ERROR();
 
+    //distruggiamo gli stream
     HANDLE_ERROR(cudaStreamDestroy(*streamMatrice));
     HANDLE_ERROR(cudaStreamDestroy(*streamKnownTermsVector));
     HANDLE_ERROR(cudaStreamDestroy(*streamObjectiveFunction));
@@ -113,9 +125,20 @@ problem_t* generateRandomProblem(int width, int height, int seed)
     HANDLE_ERROR(cudaHostUnregister(problem->constraintsMatrix));
     HANDLE_ERROR(cudaHostUnregister(problem->objectiveFunction));
     HANDLE_ERROR(cudaHostUnregister(problem->knownTermsVector));
-    
+
     return problem;
 }
+
+problem_t* readRandomProblemFromFile(FILE* file){
+    int nVars = 0;
+    int nConstraints = 0;
+    unsigned int seed = 0;
+
+    fscanf_s(file, "%d %d %u", &nVars, &nConstraints, &seed);
+
+    return generateRandomProblem(nVars, nConstraints, seed);
+}
+
 
 void printProblemToStream(FILE* Stream, problem_t* problem)
 {
