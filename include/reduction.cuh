@@ -20,4 +20,4 @@ TYPE minElement(TYPE* knownTerms, TYPE* rowPivot, unsigned int size, unsigned in
  * 
  * @return true se tutti i valori di g_vet sono <= 0, false altrimenti
 */
-bool isLessThanZero(TYPE* g_vet, unsigned int size);
+bool isLessOrEqualThanZero(TYPE* g_vet, unsigned int size);
