@@ -146,20 +146,32 @@ void printProblemToStream(FILE* Stream, problem_t* problem)
     int nConstraints = problem->constraints;
 
     fprintf(Stream, "max ");
-    for (size_t i = 0; i < nVars - 1; i++)
+    for (size_t i = 0; i < nVars; i++)
     {
-        fprintf(Stream, "%.2lf * x%zd + ", problem->objectiveFunction[i], i + 1);
+        double value = problem->objectiveFunction[i];
+        if(value >= 0){
+            fprintf(Stream, "+ ");
+        }else{
+            fprintf(Stream, "- ");
+        }
+        fprintf(Stream, "%.2lf X%zd ", abs(value), i + 1);
     }
-    fprintf(Stream, "%.2lf * x%d\n", problem->objectiveFunction[nVars - 1], nVars);
-    fprintf(Stream, "subject to \n");
+
+    fprintf(Stream, "\nsubject to \n");
 
     for (size_t i = 0; i < nConstraints; i++)
     {
-        for (size_t j = 0; j < nVars - 1; j++)
+        for (size_t j = 0; j < nVars; j++)
         {
-            fprintf(Stream, "%.2lf * x%zd + ", problem->constraintsMatrix[j * nConstraints + i], j + 1);
+            double value = problem->constraintsMatrix[j * nConstraints + i];
+            if(value >= 0){
+                fprintf(Stream, "+ ");
+            }else{
+                fprintf(Stream, "- ");
+            }
+            fprintf(Stream, "%.2lf X%zd ", abs(value), j + 1);
         }
-        fprintf(Stream, "%.2lf * x%d ", problem->constraintsMatrix[(nVars - 1) * nConstraints + i], nVars);
+
 		fprintf(Stream, "<= %.2lf\n", problem->knownTermsVector[i]);
     }
 }
