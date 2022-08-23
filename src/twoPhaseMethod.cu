@@ -2,6 +2,10 @@
 #include "error.cuh"
 #include "gaussian.cuh"
 
+#ifdef TIMER
+#include "chrono.cuh"
+#endif
+
 #define THREADS 512
 #define BL(N) min((N + THREADS - 1) / THREADS, 1024)
 
@@ -179,20 +183,36 @@ int checkDegeneracy(int *base, int size, int firstArtificial, int endArtificial)
 int phase1(tabular_t *tabular, int *base_h, int *base_dev)
 {
     // Fase 1: riempimento del tableu
+    printf("Phase 1: Filling Tableau\n");
+#ifdef TIMER
+    start(tabular, "fillTableau");
+#endif
     fillTableu(tabular, base_dev);
+#ifdef TIMER
+    stop();
+#endif
+
 #ifdef DEBUG
     fprintf(stdout, "\nTableu nella situazione iniziale\n");
     printTableauToStream(stdout, tabular, base_h);
 #endif
 
     // Fase 2: eliminazione di gauss
+    printf("Phase 1: Resetting out-of-base variables\n");
+#ifdef TIMER
+    start(tabular, "gauss1");
+#endif
     updateObjectiveFunction(tabular, base_dev);
+#ifdef TIMER
+    stop();
+#endif
 #ifdef DEBUG
     fprintf(stdout, "\nTableu dopo l'eliminazione di gauss\n");
     printTableauToStream(stdout, tabular, base_h);
 #endif
 
     // Fase 3: lancio del solver
+    printf("Phase 1: Solving auxiliary problem\n");
     solve(tabular, base_h);
 #ifdef DEBUG
     fprintf(stdout, "\nTableu dopo il lancio del primo solver\n");
@@ -205,12 +225,19 @@ int phase1(tabular_t *tabular, int *base_h, int *base_dev)
     if (compare(firstKnownTermsValue) < 0)
         return INFEASIBLE;
 
-    // Fase 5: controllo degenere: se è presente in base un valore x tale che n+m <= x < n+2m, il problema è degenere
-    return checkDegeneracy(
+        // Fase 5: controllo degenere: se è presente in base un valore x tale che n+m <= x < n+2m, il problema è degenere
+#ifdef TIMER
+    start(tabular, "checkDegeneracy");
+#endif
+    int isDegenerate = checkDegeneracy(
         base_dev,
         tabular->cols,
         tabular->problem->vars + tabular->problem->constraints,
         tabular->problem->vars + 2 * tabular->problem->constraints);
+#ifdef TIMER
+    stop();
+#endif
+    return isDegenerate;
 }
 
 int phase2(tabular_t *tabular, int *base_h, int *base_dev)
@@ -224,10 +251,14 @@ int phase2(tabular_t *tabular, int *base_h, int *base_dev)
 #endif
 
     // Fase 2: riempimento vettore costi su due stream diversi
+    printf("Phase 2: Filling costs vector with the original one\n");
     cudaStream_t streams[2];
     for (size_t i = 0; i < 2; i++)
         HANDLE_ERROR(cudaStreamCreate(streams + i));
 
+#ifdef TIMER
+    start(tabular, "costsVector");
+#endif
     // ultimi m elementi a 0
     HANDLE_ERROR(cudaMemsetAsync(
         1 + tabular->costsVector + tabular->problem->vars,
@@ -243,7 +274,9 @@ int phase2(tabular_t *tabular, int *base_h, int *base_dev)
         streams[1]));
     negateVector<<<BL(tabular->problem->vars), THREADS, 0, streams[1]>>>(tabular->costsVector + 1, tabular->problem->vars);
     HANDLE_KERNEL_ERROR();
-
+#ifdef TIMER
+    stop();
+#endif
     for (size_t i = 0; i < 2; i++)
         HANDLE_ERROR(cudaStreamDestroy(streams[i]));
 
@@ -253,13 +286,21 @@ int phase2(tabular_t *tabular, int *base_h, int *base_dev)
 #endif
 
     // Fase 3: Eliminazione di gauss per esprimere la funzione obiettivo in termini delle variabili non di base
+    printf("Phase 2: Resetting out-of-base variables\n");
+#ifdef TIMER
+    start(tabular, "gauss2");
+#endif
     updateObjectiveFunction(tabular, base_dev);
 #ifdef DEBUG
     fprintf(stdout, "\nTableu dopo eliminazione di gauss in phase2\n");
     printTableauToStream(stdout, tabular, base_h);
 #endif
+#ifdef TIMER
+    stop();
+#endif
 
-// Fase 4: Esecuzione dell'algoritmo di risoluzione
+    // Fase 4: Esecuzione dell'algoritmo di risoluzione
+    printf("Phase 2: Solving original problem\n");
 #ifdef DEBUG
     int esito = solve(tabular, base_h);
     fprintf(stdout, "\nTableu dopo seconda esecuzione del solver\n");
@@ -276,6 +317,10 @@ __inline__ void unregisterMemory(int *base_h, problem_t *problem)
     HANDLE_ERROR(cudaHostUnregister(problem->knownTermsVector));
     HANDLE_ERROR(cudaHostUnregister(problem->objectiveFunction));
     HANDLE_ERROR(cudaFreeHost(base_h));
+
+#ifdef TIMER
+    closeCsv();
+#endif
 }
 
 void getSolutionHost(tabular_t *tabular, int *base, TYPE *solution, TYPE *optimalValue)
@@ -308,6 +353,10 @@ int twoPhaseMethod(problem_t *problem, TYPE *solution, TYPE *optimalValue)
     HANDLE_ERROR(cudaHostRegister(problem->knownTermsVector, BYTE_SIZE(problem->constraints), cudaHostRegisterDefault));
     HANDLE_ERROR(cudaHostRegister(problem->objectiveFunction, BYTE_SIZE(problem->vars), cudaHostRegisterDefault));
 
+#ifdef TIMER
+    initCsv();
+#endif
+
     int result = phase1(tabular, base_h, base_map);
     if (result != FEASIBLE)
     {
@@ -322,7 +371,13 @@ int twoPhaseMethod(problem_t *problem, TYPE *solution, TYPE *optimalValue)
         return result;
     }
 
+#ifdef TIMER
+    start(tabular, "solution");
+#endif
     getSolutionHost(tabular, base_map, solution, optimalValue);
+#ifdef TIMER
+    stop();
+#endif
 
     unregisterMemory(base_h, problem);
     return result;

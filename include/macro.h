@@ -1,6 +1,7 @@
 #pragma once
 
-//#define DEBUG
+#include <stdio.h>
+#include <stdlib.h>
 
 #define TYPE double
 
@@ -38,4 +39,15 @@ __host__ __device__ __inline__ int compare(double x, double y = 0.0, double epsi
     {
         return 1;
     }
+}
+
+__inline__ FILE *openFile(const char *path, const char* mode)
+{
+    FILE *file = fopen(path, mode);
+    if (file == NULL)
+    {
+        fprintf(stderr, "Cannot open file!\n");
+        exit(-1);
+    }
+    return file;
 }
