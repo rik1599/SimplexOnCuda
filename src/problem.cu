@@ -27,14 +27,14 @@ problem_t* readProblemFromFile(FILE* file)
     int nConstraints = 0;
 
     //Leggo il numero di variabili e vincoli del problema dalla prima riga del file
-	fscanf_s(file, "%d %d", &nVars, &nConstraints);
+	fscanf(file, "%d %d", &nVars, &nConstraints);
 
     problem_t* problem = mallocProblem(nVars, nConstraints);
 
     //Leggo il vettore dei costi dalla seconda riga del file
     for (size_t i = 0; i < nVars; i++)
     {
-        fscanf_s(file, "%lf", &problem->objectiveFunction[i]);
+        fscanf(file, "%lf", &problem->objectiveFunction[i]);
     }
 
     //Leggo la matrice delle costanti e il vettore dei termini noti
@@ -42,9 +42,9 @@ problem_t* readProblemFromFile(FILE* file)
     {
         for (size_t j = 0; j < nVars; j++)
         {
-            fscanf_s(file, "%lf", &problem->constraintsMatrix[j * nConstraints + i]);
+            fscanf(file, "%lf", &problem->constraintsMatrix[j * nConstraints + i]);
         }
-        fscanf_s(file, "%lf\n", &problem->knownTermsVector[i]);
+        fscanf(file, "%lf\n", &problem->knownTermsVector[i]);
     }
 
     return problem;
@@ -134,7 +134,7 @@ problem_t* readRandomProblemFromFile(FILE* file){
     int nConstraints = 0;
     unsigned int seed = 0;
 
-    fscanf_s(file, "%d %d %u", &nVars, &nConstraints, &seed);
+    fscanf(file, "%d %d %u", &nVars, &nConstraints, &seed);
 
     return generateRandomProblem(nVars, nConstraints, seed);
 }
