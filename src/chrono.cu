@@ -35,7 +35,7 @@ void stop()
     float elapsedTime;
     cudaEventElapsedTime(&elapsedTime, startEvent, stopEvent);
 
-    fprintf(fileChrono, "%f\n", elapsedTime);
+    fprintf(fileChrono, "%f\n", elapsedTime * 1000);
 }
 
 void closeCsv()
