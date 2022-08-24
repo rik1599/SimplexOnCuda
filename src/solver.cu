@@ -27,7 +27,7 @@ __global__ void copyColumn(matrixInfo matInfo, int colToCpy, TYPE *dst)
          i < matInfo.rows;
          i += blockDim.x * gridDim.x)
     {
-        dst[i] = ROW(matInfo.mat, i, matInfo.pitch)[colToCpy];
+        dst[i] = *INDEX(matInfo.mat, i, colToCpy, matInfo.pitch);
     }
 }
 
