@@ -44,6 +44,26 @@ int main(int argc, const char *argv[])
         FILE *file = openFile(argv[2], "r");
         problem = readRandomProblemFromFile(file);
         fclose(file);
+    }else if (strcmp(argv[1], "-t") == 0)
+    {
+        fprintf(stderr, "Running a benchmark (max 8192*8192)... \n\n\n");
+        int side = 256;
+        time_t start =  time(NULL);
+
+        while(side <= 8192){
+            fprintf(stdout, "\nCurrent matrix: %d*%d\n\n", side, side);
+            problem_t *benchmarkProblem = generateRandomProblem(side, side, side, +1, +100);
+            TYPE *solution = (TYPE *)(malloc(BYTE_SIZE(benchmarkProblem->vars)));
+            TYPE optimalValue = 0;
+            twoPhaseMethod(benchmarkProblem, solution, &optimalValue);
+            freeProblem(benchmarkProblem);
+            free(solution);
+            side *= 2;
+        }
+
+        time_t end =  time(NULL);
+        fprintf(stdout, "Benchmark terminato...\n Sono stati necessari %.3lfs", (double) end-start);
+        return 0;
     }
 #ifdef DEBUG
     printProblemToStream(stdout, problem);
@@ -105,7 +125,7 @@ void setupDevice()
 problem_t *randomInput(int vars, int constraints, int seed)
 {
     printf("Generating random problem with %d variables, %d contraints with seed: %d\n", vars, constraints, seed);
-    return generateRandomProblem(vars, constraints, seed);
+    return generateRandomProblem(vars, constraints, seed, -100, +100);
 }
 
 void saveRandomInput(int vars, int constraints, int seed)
