@@ -51,7 +51,7 @@ problem_t* readRandomProblemFromFile(FILE* file);
  * @param seed int - seed per la generazione, seed uguali produrranno problemi uguali
  * @return problem_t* - puntatore al problema
  */
-problem_t* generateRandomProblem(int nVars, int nConstraints, unsigned int seed);
+problem_t* generateRandomProblem(int nVars, int nConstraints, unsigned int seed, int minGenerator = -100, int maxGenerator = 100);
 
 
 /** Stampa il problema su uno stream nella forma

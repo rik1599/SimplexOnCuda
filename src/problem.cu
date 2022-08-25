@@ -4,124 +4,120 @@
 
 #include <stdlib.h>
 
-#define MINIMUM_GENERATION 1
-#define MAXIMUM_GENERATION +1000
-
-
-problem_t* mallocProblem(int nVars, int nConstraints)
+problem_t *mallocProblem(int nVars, int nConstraints)
 {
-    problem_t* problem = (problem_t*)malloc(sizeof(problem_t));
-    
+    problem_t *problem = (problem_t *)malloc(sizeof(problem_t));
+
     problem->constraints = nConstraints;
     problem->vars = nVars;
-    
-    problem->objectiveFunction = (TYPE*)malloc(BYTE_SIZE(nVars));
-    problem->constraintsMatrix = (TYPE*)malloc(BYTE_SIZE(nVars * nConstraints));
-    problem->knownTermsVector = (TYPE*)malloc(BYTE_SIZE(nConstraints));
+
+    problem->objectiveFunction = (TYPE *)malloc(BYTE_SIZE(nVars));
+    problem->constraintsMatrix = (TYPE *)malloc(BYTE_SIZE(nVars * nConstraints));
+    problem->knownTermsVector = (TYPE *)malloc(BYTE_SIZE(nConstraints));
     return problem;
 }
 
-problem_t* readProblemFromFile(FILE* file)
+problem_t *readProblemFromFile(FILE *file)
 {
     int nVars = 0;
     int nConstraints = 0;
 
-    //Leggo il numero di variabili e vincoli del problema dalla prima riga del file
-	fscanf_s(file, "%d %d", &nVars, &nConstraints);
+    // Leggo il numero di variabili e vincoli del problema dalla prima riga del file
+    fscanf(file, "%d %d", &nVars, &nConstraints);
 
-    problem_t* problem = mallocProblem(nVars, nConstraints);
+    problem_t *problem = mallocProblem(nVars, nConstraints);
 
-    //Leggo il vettore dei costi dalla seconda riga del file
+    // Leggo il vettore dei costi dalla seconda riga del file
     for (size_t i = 0; i < nVars; i++)
     {
-        fscanf_s(file, "%lf", &problem->objectiveFunction[i]);
+        fscanf(file, "%lf", &problem->objectiveFunction[i]);
     }
 
-    //Leggo la matrice delle costanti e il vettore dei termini noti
+    // Leggo la matrice delle costanti e il vettore dei termini noti
     for (size_t i = 0; i < nConstraints; i++)
     {
         for (size_t j = 0; j < nVars; j++)
         {
-            fscanf_s(file, "%lf", &problem->constraintsMatrix[j * nConstraints + i]);
+            fscanf(file, "%lf", &problem->constraintsMatrix[j * nConstraints + i]);
         }
-        fscanf_s(file, "%lf\n", &problem->knownTermsVector[i]);
+        fscanf(file, "%lf\n", &problem->knownTermsVector[i]);
     }
 
     return problem;
 }
 
-problem_t* generateRandomProblem(int width, int height, unsigned int seed)
+problem_t *generateRandomProblem(int nVars, int nConstraints, unsigned int seed, int minGenerator, int maxGenerator)
 {
-    
+
     /**
-     * L'idea è quella di generare i tre vettori utilizzando 
+     * L'idea è quella di generare i tre vettori utilizzando
      * tre stream e poi trasferire la matrice creata in memoria
      * (per una questione di uniformità del codice e della procedura di test)
-    */
+     */
 
-    //allocazione problema in memoria
-    problem_t* problem = mallocProblem(width, height);                           
-    
-    //dal seed iniziale generiamo tre seed di partenza per i kernel generatori: ogni generatore avrà
-    //un proprio seed generato casualmente a partire da quello di partenza, facendo in questo modo abbiamo la ripetibilità.
+    // allocazione problema in memoria
+    problem_t *problem = mallocProblem(nVars, nConstraints);
+
+    // dal seed iniziale generiamo tre seed di partenza per i kernel generatori: ogni generatore avrà
+    // un proprio seed generato casualmente a partire da quello di partenza, facendo in questo modo abbiamo la ripetibilità.
     srand(seed);
 
     unsigned int seedOne = rand();
     unsigned int seedTwo = rand();
     unsigned int seedThree = rand();
 
-    #ifdef DEBUG
-        printf("Attualmente i seed sono: %d, %d, %d\n", seedOne, seedTwo, seedThree);
-    #endif
+#ifdef DEBUG
+    printf("Seed used: %d, %d, %d\n", seedOne, seedTwo, seedThree);
+#endif
 
-    //per la gestione asincrona è necessario settare la memoria host in page locked
+    // per la gestione asincrona è necessario settare la memoria host in page locked
     HANDLE_ERROR(cudaHostRegister(problem->constraintsMatrix, BYTE_SIZE(problem->vars * problem->constraints), cudaHostRegisterDefault));
     HANDLE_ERROR(cudaHostRegister(problem->objectiveFunction, BYTE_SIZE(problem->vars), cudaHostRegisterDefault));
     HANDLE_ERROR(cudaHostRegister(problem->knownTermsVector, BYTE_SIZE(problem->constraints), cudaHostRegisterDefault));
 
-    //utilizziamo la memoria mapped per i due vettori
-    TYPE *objectiveFunction_map;   
+    // utilizziamo la memoria mapped per i due vettori
+    TYPE *objectiveFunction_map;
     TYPE *knownTermsVector_map;
 
     HANDLE_ERROR(cudaHostGetDevicePointer(&objectiveFunction_map, problem->objectiveFunction, 0));
     HANDLE_ERROR(cudaHostGetDevicePointer(&knownTermsVector_map, problem->knownTermsVector, 0));
 
     /*
-    * Generazione della matrice, se si volesse tornare alla linearizzazione per righe => invertire costraints e vars
-    */
+     * Generazione della matrice, se si volesse tornare alla linearizzazione per righe => invertire costraints e vars
+     */
     cudaStream_t *streamMatrice = generateMatrixInParallelAsync(
-                                problem->constraintsMatrix,
-                                problem->constraints, //dato che la vogliamo linearizzata per colonne generiamo una trasposta
-                                problem->vars,
-                                seedThree,
-                                MINIMUM_GENERATION,
-                                MAXIMUM_GENERATION);
+        problem->constraintsMatrix,
+        problem->constraints, // dato che la vogliamo linearizzata per colonne generiamo una trasposta
+        problem->vars,
+        seedThree,
+        minGenerator,
+        maxGenerator);
 
-    //Generazione casuale termini noti
+    // Generazione casuale termini noti
     cudaStream_t *streamKnownTermsVector = generateVectorInParallelAsync(
-                                            knownTermsVector_map,
-                                            problem->constraints,
-                                            (unsigned long long) seedOne,
-                                            MINIMUM_GENERATION,
-                                            MAXIMUM_GENERATION);
+        knownTermsVector_map,
+        problem->constraints,
+        (unsigned long long)seedOne,
+        minGenerator,
+        maxGenerator);
 
-    //Generazione casuale funzione obiettivo
-    cudaStream_t* streamObjectiveFunction = generateVectorInParallelAsync(
-                                                objectiveFunction_map,
-                                                problem->vars,
-                                                (unsigned long long) seedTwo,
-                                                MINIMUM_GENERATION,
-                                                MAXIMUM_GENERATION);
+    // Generazione casuale funzione obiettivo
+    cudaStream_t *streamObjectiveFunction = generateVectorInParallelAsync(
+        objectiveFunction_map,
+        problem->vars,
+        (unsigned long long)seedTwo,
+        minGenerator,
+        maxGenerator);
 
-    //sincronizziamo tutti gli stream
+    // sincronizziamo tutti gli stream
     HANDLE_KERNEL_ERROR();
 
-    //distruggiamo gli stream
+    // distruggiamo gli stream
     HANDLE_ERROR(cudaStreamDestroy(*streamMatrice));
     HANDLE_ERROR(cudaStreamDestroy(*streamKnownTermsVector));
     HANDLE_ERROR(cudaStreamDestroy(*streamObjectiveFunction));
 
-    //rendiamo la memoria non più registered
+    // rendiamo la memoria non più registered
     HANDLE_ERROR(cudaHostUnregister(problem->constraintsMatrix));
     HANDLE_ERROR(cudaHostUnregister(problem->objectiveFunction));
     HANDLE_ERROR(cudaHostUnregister(problem->knownTermsVector));
@@ -129,45 +125,62 @@ problem_t* generateRandomProblem(int width, int height, unsigned int seed)
     return problem;
 }
 
-problem_t* readRandomProblemFromFile(FILE* file){
+problem_t *readRandomProblemFromFile(FILE *file)
+{
     int nVars = 0;
     int nConstraints = 0;
     unsigned int seed = 0;
 
-    fscanf_s(file, "%d %d %u", &nVars, &nConstraints, &seed);
+    fscanf(file, "%d %d %u", &nVars, &nConstraints, &seed);
 
     return generateRandomProblem(nVars, nConstraints, seed);
 }
 
-
-void printProblemToStream(FILE* Stream, problem_t* problem)
+void printProblemToStream(FILE *Stream, problem_t *problem)
 {
     int nVars = problem->vars;
     int nConstraints = problem->constraints;
 
     fprintf(Stream, "max ");
-    for (size_t i = 0; i < nVars - 1; i++)
+    for (size_t i = 0; i < nVars; i++)
     {
-        fprintf(Stream, "%.2lf * x%zd + ", problem->objectiveFunction[i], i + 1);
+        double value = problem->objectiveFunction[i];
+        if (value >= 0)
+        {
+            fprintf(Stream, "+ ");
+        }
+        else
+        {
+            fprintf(Stream, "- ");
+        }
+        fprintf(Stream, "%.2lf X%zd ", abs(value), i + 1);
     }
-    fprintf(Stream, "%.2lf * x%d\n", problem->objectiveFunction[nVars - 1], nVars);
-    fprintf(Stream, "subject to \n");
+
+    fprintf(Stream, "\nsubject to \n");
 
     for (size_t i = 0; i < nConstraints; i++)
     {
-        for (size_t j = 0; j < nVars - 1; j++)
+        for (size_t j = 0; j < nVars; j++)
         {
-            fprintf(Stream, "%.2lf * x%zd + ", problem->constraintsMatrix[j * nConstraints + i], j + 1);
+            double value = problem->constraintsMatrix[j * nConstraints + i];
+            if (value >= 0)
+            {
+                fprintf(Stream, "+ ");
+            }
+            else
+            {
+                fprintf(Stream, "- ");
+            }
+            fprintf(Stream, "%.2lf X%zd ", abs(value), j + 1);
         }
-        fprintf(Stream, "%.2lf * x%d ", problem->constraintsMatrix[(nVars - 1) * nConstraints + i], nVars);
-		fprintf(Stream, "<= %.2lf\n", problem->knownTermsVector[i]);
+
+        fprintf(Stream, "<= %.2lf\n", problem->knownTermsVector[i]);
     }
 }
 
-void freeProblem(problem_t* problem)
+void freeProblem(problem_t *problem)
 {
     free(problem->constraintsMatrix);
     free(problem->knownTermsVector);
     free(problem->objectiveFunction);
 }
-

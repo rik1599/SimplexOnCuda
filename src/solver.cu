@@ -3,6 +3,10 @@
 #include "reduction.cuh"
 #include "error.cuh"
 
+#ifdef TIMER
+#include "chrono.cuh"
+#endif
+
 struct matrixInfo
 {
     TYPE *mat;
@@ -23,19 +27,19 @@ __global__ void copyColumn(matrixInfo matInfo, int colToCpy, TYPE *dst)
          i < matInfo.rows;
          i += blockDim.x * gridDim.x)
     {
-        dst[i] = ROW(matInfo.mat, i, matInfo.pitch)[colToCpy];
+        dst[i] = *INDEX(matInfo.mat, i, colToCpy, matInfo.pitch);
     }
 }
 
 __global__ void updateContraintsMatrix(matrixInfo matInfo, double *colPivot, double *rowPivot, int colPivotIndex, double pivot)
 {
     double *pRow;
-    char* pMat = (char*)matInfo.mat;
+    char *pMat = (char *)matInfo.mat;
     for (int col = blockIdx.x * blockDim.x + threadIdx.x; col < matInfo.cols; col += blockDim.x * gridDim.x)
     {
         for (int row = blockIdx.y * blockDim.y + threadIdx.y; row < matInfo.rows; row += blockDim.y * gridDim.y)
         {
-            pRow = (double*)(pMat + row * matInfo.pitch);
+            pRow = (double *)(pMat + row * matInfo.pitch);
             pRow[col] = col == colPivotIndex ? pRow[col] / pivot : fma(-rowPivot[col] / pivot, colPivot[row], pRow[col]);
         }
     }
@@ -77,17 +81,18 @@ __inline__ void updateTableau(tabular_t *tabular, TYPE *colPivot, int colPivotIn
         HANDLE_ERROR(cudaStreamDestroy(streams[i]));
 }
 
-int solve(tabular_t *tabular, int *base)
+#define NOT_ENDED -10
+__inline__ int solve(tabular_t *tabular, int *base, TYPE *rowPivot, TYPE *colPivot)
 {
-    TYPE *rowPivot, *colPivot;
-    HANDLE_ERROR(cudaMalloc((void **)&rowPivot, BYTE_SIZE(tabular->cols)));
-    HANDLE_ERROR(cudaMalloc((void **)&colPivot, BYTE_SIZE(tabular->rows)));
-
     unsigned int colPivotIndex;
     unsigned int rowPivotIndex;
+    TYPE minCosts;
 
-    TYPE minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
-    while (compare(minCosts) < 0)
+#ifdef TIMER
+    start(tabular, "solve");
+#endif
+    minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
+    if (compare(minCosts) < 0)
     {
         HANDLE_ERROR(cudaMemcpy(
             rowPivot,
@@ -96,23 +101,44 @@ int solve(tabular_t *tabular, int *base)
             cudaMemcpyDefault));
 
         if (isLessOrEqualThanZero(rowPivot, tabular->cols))
+        {
+#ifdef TIMER
+            stop();
+#endif
             return UNBOUNDED;
+        }
 
         minElement(tabular->knownTermsVector, rowPivot, tabular->cols, &colPivotIndex);
         base[colPivotIndex] = rowPivotIndex;
 
         updateTableau(tabular, colPivot, colPivotIndex, rowPivot, minCosts);
 
-        minCosts = minElement(tabular->costsVector + 1, tabular->rows - 1, &rowPivotIndex);
-
-#ifdef DEBUG
-        printTableauToStream(stdout, tabular, base);
-        while (getchar() != '\n')
-            ;
+#ifdef TIMER
+        stop();
 #endif
+        return NOT_ENDED;
     }
+    else
+    {
+#ifdef TIMER
+        stop();
+#endif
+        return FEASIBLE;
+    }
+}
+
+int solve(tabular_t *tabular, int *base)
+{
+    TYPE *rowPivot, *colPivot;
+    HANDLE_ERROR(cudaMalloc((void **)&rowPivot, BYTE_SIZE(tabular->cols)));
+    HANDLE_ERROR(cudaMalloc((void **)&colPivot, BYTE_SIZE(tabular->rows)));
+
+    int status = FEASIBLE;
+    while ((status = solve(tabular, base, rowPivot, colPivot)) == NOT_ENDED)
+        ;
 
     HANDLE_ERROR(cudaFree(rowPivot));
     HANDLE_ERROR(cudaFree(colPivot));
-    return FEASIBLE;
+
+    return status;
 }
