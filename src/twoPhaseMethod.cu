@@ -57,9 +57,9 @@ __global__ void setVectorToOne(TYPE *vector, int size)
 }
 
 /**
- * Inverte i segni a tutti gli elementi del vettore da start alla fine del vettore
+ * Inverte i segni a tutti gli elementi di un vettore
  *
- * @param vector - puntatore al vettore da settare ad 1
+ * @param vector - puntatore al vettore
  * @param size - la dimensione del vettore
  */
 __global__ void negateVector(TYPE *vector, int size)
@@ -69,6 +69,33 @@ __global__ void negateVector(TYPE *vector, int size)
          idX += gridDim.x * blockDim.x)
     {
         vector[idX] = -vector[idX];
+    }
+}
+
+__global__ void negateColumn(TYPE *mat, int height, size_t pitch, int colIndex)
+{
+    TYPE *pValue = NULL;
+    TYPE value = 0;
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x;
+         i < height;
+         i += blockDim.x * gridDim.x)
+    {
+        pValue = INDEX(mat, i, colIndex, pitch);
+        value = *pValue;
+        *pValue = -value;
+    }
+}
+
+__global__ void checkColumns(TYPE *mat, int width, int height, size_t pitch)
+{
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x;
+         i < width;
+         i += blockDim.x * gridDim.x)
+    {
+        if (compare(*INDEX(mat, 0, i, pitch)) < 0)
+        {
+            negateColumn<<<BL(height), THREADS>>>(mat, height, pitch, i);
+        }
     }
 }
 
@@ -115,8 +142,9 @@ void fillTableu(tabular_t *tabular, int *base)
     HANDLE_ERROR(cudaMemsetAsync(tabular->costsVector, 0, BYTE_SIZE(sizeToSetZero), streams[0]));
 
     // Punto 2: ultimi m valori della prima riga a 1 (kernel)
-    setVectorToOne<<<BL(tabular->problem->constraints), THREADS, 0, streams[1]>>>(tabular->costsVector + sizeToSetZero, tabular->problem->constraints);
-
+    setVectorToOne<<<BL(tabular->problem->constraints), THREADS, 0, streams[1]>>>
+        (tabular->costsVector + sizeToSetZero, tabular->problem->constraints);
+    
     // Punto 3: copia della matrice dei vincoli originale dalla seconda riga di tabular->table sulle prime n colonne (cudaMemcpy2DAsync)
     HANDLE_ERROR(cudaMemcpy2DAsync(
         tabular->constraintsMatrix,               // destinazione
@@ -155,6 +183,9 @@ void fillTableu(tabular_t *tabular, int *base)
 
     for (size_t i = 0; i < 6; i++)
         HANDLE_ERROR(cudaStreamDestroy(streams[i]));
+
+    // Punto 8: negare tutte le disequazioni (colonne del tableau) con termine noto < 0
+    checkColumns<<<BL(tabular->cols), THREADS>>>(tabular->table, tabular->cols, tabular->rows, tabular->pitch);
 }
 
 /**
@@ -252,6 +283,7 @@ int phase2(tabular_t *tabular, int *base_h, int *base_dev)
 
     // Fase 2: riempimento vettore costi su due stream diversi
     printf("Phase 2: Filling costs vector with the original one\n");
+
     cudaStream_t streams[2];
     for (size_t i = 0; i < 2; i++)
         HANDLE_ERROR(cudaStreamCreate(streams + i));
@@ -277,6 +309,7 @@ int phase2(tabular_t *tabular, int *base_h, int *base_dev)
 #ifdef TIMER
     stop();
 #endif
+
     for (size_t i = 0; i < 2; i++)
         HANDLE_ERROR(cudaStreamDestroy(streams[i]));
 

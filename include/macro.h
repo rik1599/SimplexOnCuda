@@ -25,7 +25,7 @@ __host__ __device__ __inline__ TYPE* INDEX(TYPE* vet, int row, int col, size_t p
  * 
  *  @return 0 se x == y (considerata la precisione), -1 se x < y, 1 se x > 1
  */
-__host__ __device__ __inline__ int compare(double x, double y = 0.0, double epsilon = 1e-12)
+__host__ __device__ __inline__ int compare(double x, double y = 0.0, double epsilon = 1e-9)
 {
     if (abs(x - y) < epsilon)
     {
