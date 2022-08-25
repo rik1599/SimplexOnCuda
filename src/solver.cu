@@ -116,6 +116,11 @@ __inline__ int solve(tabular_t *tabular, int *base, TYPE *rowPivot, TYPE *colPiv
 #ifdef TIMER
         stop();
 #endif
+#ifdef DEBUG
+        printTableauToStream(stdout, tabular, base);
+        while (getchar() != '\n')
+            ;
+#endif
         return NOT_ENDED;
     }
     else
