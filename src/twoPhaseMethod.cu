@@ -401,6 +401,7 @@ int twoPhaseMethod(problem_t *problem, TYPE *solution, TYPE *optimalValue)
     if (result != FEASIBLE)
     {
         unregisterMemory(base_h, problem);
+        freeTabular(tabular);
         return result;
     }
 
@@ -413,5 +414,6 @@ int twoPhaseMethod(problem_t *problem, TYPE *solution, TYPE *optimalValue)
 #endif
 
     unregisterMemory(base_h, problem);
+    freeTabular(tabular);
     return result;
 }
