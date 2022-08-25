@@ -10,11 +10,11 @@ void initCsv()
     time_t timer = time(NULL);
     char time_str[20];
     struct tm *tm_info = localtime(&timer);
-    strftime(time_str, 20, "%Y%m%d", tm_info);
+    strftime(time_str, 20, "%Y%m%d%H%M", tm_info);
 
     char fileName[50];
     sprintf(fileName, "..\\data\\measures\\times_%s.txt", time_str);
-    fileChrono = openFile(fileName, "a");
+    fileChrono = openFile(fileName, "w");
     fprintf(fileChrono, "vars,contraints,operation,elapsed_time\n");
 
     HANDLE_ERROR(cudaEventCreate(&startEvent));

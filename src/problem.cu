@@ -4,9 +4,6 @@
 
 #include <stdlib.h>
 
-#define MINIMUM_GENERATION -100
-#define MAXIMUM_GENERATION +100
-
 problem_t *mallocProblem(int nVars, int nConstraints)
 {
     problem_t *problem = (problem_t *)malloc(sizeof(problem_t));
@@ -49,7 +46,7 @@ problem_t *readProblemFromFile(FILE *file)
     return problem;
 }
 
-problem_t *generateRandomProblem(int width, int height, unsigned int seed)
+problem_t *generateRandomProblem(int nVars, int nConstraints, unsigned int seed, int minGenerator, int maxGenerator)
 {
 
     /**
@@ -59,7 +56,7 @@ problem_t *generateRandomProblem(int width, int height, unsigned int seed)
      */
 
     // allocazione problema in memoria
-    problem_t *problem = mallocProblem(width, height);
+    problem_t *problem = mallocProblem(nVars, nConstraints);
 
     // dal seed iniziale generiamo tre seed di partenza per i kernel generatori: ogni generatore avrà
     // un proprio seed generato casualmente a partire da quello di partenza, facendo in questo modo abbiamo la ripetibilità.
@@ -93,24 +90,24 @@ problem_t *generateRandomProblem(int width, int height, unsigned int seed)
         problem->constraints, // dato che la vogliamo linearizzata per colonne generiamo una trasposta
         problem->vars,
         seedThree,
-        MINIMUM_GENERATION,
-        MAXIMUM_GENERATION);
+        minGenerator,
+        maxGenerator);
 
     // Generazione casuale termini noti
     cudaStream_t *streamKnownTermsVector = generateVectorInParallelAsync(
         knownTermsVector_map,
         problem->constraints,
         (unsigned long long)seedOne,
-        MINIMUM_GENERATION,
-        MAXIMUM_GENERATION);
+        minGenerator,
+        maxGenerator);
 
     // Generazione casuale funzione obiettivo
     cudaStream_t *streamObjectiveFunction = generateVectorInParallelAsync(
         objectiveFunction_map,
         problem->vars,
         (unsigned long long)seedTwo,
-        MINIMUM_GENERATION,
-        MAXIMUM_GENERATION);
+        minGenerator,
+        maxGenerator);
 
     // sincronizziamo tutti gli stream
     HANDLE_KERNEL_ERROR();
