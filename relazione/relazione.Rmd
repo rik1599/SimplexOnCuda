@@ -167,6 +167,7 @@ Per fare ciò si risolve il cosiddetto **problema ausiliario**
 \end{gather*}
 In pratica aggiungo al problema originario $m$ nuove variabili (dette **variabili artificiali**) e cerco di azzerarne la somma negata. Se ciò avviene il problema di partenza è ammissibile e la soluzione di base ottenuta può essere utilizzata come base di partenza per la fase 2 dell'algoritmo, altrimenti il problema originale non è ammissibile.
 Se nella base finale una delle variabili artificiali è rimasta in base il problema è degenere.
+Per lo pseudocodice si veda l'algoritmo \ref{alg:simplex-phase1}.
 
 \begin{algorithm}
 \caption{Simplex-Phase1}
@@ -217,7 +218,7 @@ $drop(T[0..m][n+m+1..n+2m])$\;
 \end{algorithm}
 
 ### Fase 2
-Terminata la prima fase si eliminano le variabili artificiali dal tableau e si sostituisce la funzione obiettivo con quella del problema originale, in seguito si procede a risolvere il problema originale.
+Terminata la prima fase si eliminano le variabili artificiali dal tableau e si sostituisce la funzione obiettivo con quella del problema originale, in seguito si procede a risolvere il problema originale. Per lo pseudocodice si veda l'algoritmo \ref{alg:simplex-phase2}.
 
 \begin{algorithm}
 \caption{Simplex-Phase2}
@@ -239,8 +240,10 @@ $T[0][n..n+m] \gets 0$\;
 \end{algorithm}
 
 ### Simplesso a due fasi
+Si veda l'algoritmo \ref{alg:2phases-simplex}
 \begin{algorithm}
 \caption{2Phases-Simplex}
+\label{alg:2phases-simplex}
 \KwData{$A \in \mathbb{R}^{m \times n}, b \in \mathbb{R}^m, c \in \mathbb{R}^n$}
 \KwOut{soluzione al problema OPPURE problema INFEASIBLE o UNBOUNDED o DEGENERE}
 
@@ -249,11 +252,11 @@ $(T,\mathcal{B}) \gets Simplex-Phase1(A, b)$\;
 
 \end{algorithm}
 
-# Scelte implementative e algoritmi utilizzati
+# Scelte implementative
 ## Schema di parallelizzazione
-Per introdurre parallelismo si è deciso di parallelizzare i singoli passi che lo compongono, mantenendo invece sequenziale la struttura dell'algoritmo in sè.
+Per introdurre parallelismo si è deciso di parallelizzare le singole operazioni svolte sui vettori e sulle matrici, mantenendo intatta la struttura dell'algoritmo.
 
-Così facendo non si prevede una riduzione della complessità teorica dell'algoritmo, ma ottenere un miglioramento empirico sui tempi necessari a risolvere modelli anche molto complessi (in quanto si va a ridurre la complessità delle singole operazioni sui vettori e sulle matrici).
+Così facendo non si prevede una riduzione della complessità teorica dell'algoritmo, ma ottenere un miglioramento empirico sui tempi necessari.
 
 ## Gestione della memoria
 Implementando gli algoritmi in CUDA, merita particolare risalto il modo in cui viene organizzata la memoria:
@@ -262,101 +265,20 @@ Implementando gli algoritmi in CUDA, merita particolare risalto il modo in cui v
 
 - i dati del problema originale vengono memorizzati utilizzando memoria *page-locked*, questo per permettere i trasferimenti di memoria in parallelo con i CUDA Stream (e quindi ottimizzare la fase di costruzione del tableau in global memory)
 
-- il vettore della base è memorizzato come memoria *mapped page-locked*, in modo da potervi accedere sia lato host che lato GPU
-in qualsiasi momento senza dover gestire i trasferimenti
+- il vettore della base è memorizzato come memoria *mapped page-locked*, in modo da potervi accedere sia lato host che lato GPU in qualsiasi momento senza dover gestire i trasferimenti
 
 - siccome l'algoritmo opera spesso su singole righe o colonne è fondamentale memorizzare i dati in memoria globale in modo da minimizzare il numero di accessi strided o disallineati. Per questo motivi si è deciso il seguente schema di memorizzazione (visibile in figura \ref{fig:memory}):
     
-    - la matrice del tableau viene allocata con *cudaMallocPitch* ed è memorizzata in maniera *lineare* per **colonne**. In altre parole l'implementazione lavorerà sul tableau trasposto. Questo perchè l'algoritmo tende ad accedere più alle singole colonne che alle singole righe. Infatti così facendo sarà necessario implementare solo un kernel che accede alla memoria in maniera strided (laddove la classica memorizzazione per righe avrebbe richiesti tre),
+    - la matrice del tableau viene allocata con *cudaMallocPitch* ed è memorizzata in maniera *lineare* per **colonne**. In altre parole l'implementazione utilizza il tableau trasposto. L'algoritmo infatti accede più spesso ai vettori delle variabili che ai vettori dei vincoli.
+    Per l'accesso ai singoli vincoli (in questo caso le colonne della matrice memorizzata in global memory) si è visto che l'approccio migliore (dal punto di vista del tempo necessario ad eseguire l'operazione) è quello di utilizzare comunque gli accessi strided.
     
-    - il vettore dei termini noti non viene memorizzato in fondo al tableau, ma nella prima riga della matrice. In questo modo nel passaggio dalla fase 1 alla fase 2 non è necessario spostare la colonna nella matrice, ma è sufficiente troncare il numero di righe della matrice da una variabile,
+    - il vettore dei termini noti non viene memorizzato in fondo al tableau, ma nella prima riga della matrice. In questo modo nel passaggio dalla fase 1 alla fase 2 non è necessario spostare la colonna nella matrice, ma è sufficiente troncare il numero di righe senza dover intervenire sull'allocazione della memoria.
 
-    - il vettore dei costi non viene memorizzato nella matrice del tableau, ma in un vettore a parte e il valore della funzione obiettivo è nel primo elemento di questo vettore.
+    - il vettore dei costi non viene memorizzato nella matrice del tableau, ma in un vettore a parte e il valore della funzione obiettivo è nel primo elemento di questo vettore (analogalmente a quanto fatto con il vettore dei termini noti al punto precedente).
 
 ```{r memory, echo=FALSE, fig.cap="Schema di memorizzazione in memoria globale", out.width="50%", fig.align="center"}
 knitr::include_graphics("img/memory.png")
 ```
-
-## Ricerca del pivot e test di ottimalità
-## Eliminazione di Gauss
-Come accennato nell'introduzione teorica all'algoritmo del simplesso in due fasi un passo fondamentale 
-per raggiungere la soluzione consiste nell'esprimere la funzione dei costi in funzione delle variabili non in base, per fare ciò si utilizzano una serie di eliminazionei di gauss.
-
-Ignorando i dettagli del problema, ciò che si vuole fare consiste in:
-
-Dati:
-
-- Una matrice $A_{n*m}$
-
-- Un vettore di moltiplicatori M di dimensione m
-
-- Il vettore dei costi C di dimensione n
-
-Si vuole calcolare C' come:
-
-$$c'_{i} = c_{i} - \sum_{k=0}^{m} (a_{k,i} * m_{k})  \; \; \; \; \; \; 0<i<n$$
-
-L'approccio seriale è banale e consiste nello scorrimento di tutta la matrice e per ogni elemento $a_{a,b}$ si calcola il rispettivo 
-$c'_{b}$.
-
-Risulta possibile ottimizzare l'efficienza di questo algoritmo attraverso il parallelismo.
-
-### Approccio naive
-Per discutere gli approcci paralleli è bene ricordare come i dati su cui l'eliminazione di gauss deve agire sono rappresentati in memoria, ovvero:
-
-- Il vettore dei costi C è rappresentato in un vettore a se di dimensione m, con il primo elemento il valore della funzione obiettivo
-
-- il vettore dei moltiplicatori M è rappresentato da un vettore a se di dimensione naive
-
-- La matrice dei $A_{m*n}$ vincoli è linearizzata per righe, con la prima colonna contenente i termini noti
-
-Dato che la matrice è linearizzata per colonne è più semplice effettuare i ragionamenti sulla trasposta A^{t}.
-
-L'approccio più semplice per parallelizzare questo algoritmo consiste nell'utilizzare delle tiles di thread (blocchi bidimensionali) dove ciascuno di essi si occupa di
-eseguire la stessa operazione della versione seriale, dunque ogni thread in base alla sua posizione globale (posizione nella grid) aggiorna il valore della funzione obiettivo.
-
-Per come è rappresentata la matrice abbiamo che thread consecutivi accedo ad elementi consecutivi sia della matrice sia del vettore dei moltiplicatori, questo permette di sfruttare in modo naturale la coalescenza evitando accessi 
-stride se si scieglie in maniera appropriata la dimensione sull'asse x dei blocchi.
-
-Il problema di questa soluzione che la rende non ottimale è la concorrenza durante la scrittura sul vettore dei costi, infatti thread con lo stesso threadIdx.x nello stesso blocco
-accederanno in scrittura sulla stessa locazione di memoria dato che dovranno aggiornare lo stesso elemento della funzione obiettivo. Anche blocchi differenti possono accedere alla stessa locazione di memoria in scrittura, causando concorrenza,
- questo accade quando thread di blocchi diversi lavorano sulla stessa riga della matrice, aggiornando di conseguanza lo stesso elemento della funzione obiettivo.
-
-A causa della concorrenza è necessario utilizzare l'operazione di somma atomica per evitare inconsistenze, ma questo porta ad una perdita di efficienza dato che scritture atomiche sulla stessa locazione di memoria vengono serializzate.
-
-A seconda della compute capability della scheda video utilizzata il discorso varia:
-
--Nel caso in cui la scheda grafica disponga di compute capability superiore o uguale alla 6.0 potrebbe essere sufficiente l'approccio naive, con opportuni accorgimenti,
-dato che l'effiecienza delle operazioni atomiche permette di avere risultati paragonabili se non migliori alla migliore soluzione trovata che eviti o limiti l'utilizzo delle operazioni atomiche.
-
--Nel caso in cui la compute capability sia inferiore alla 6.0 non è disponibile l'operazione atomica di somma di double, per tale motivo è necessario utilizzare un implementazione simulata con costi
-non triviali sulle performance, per tale motivo utilizzare l'approccio che limita le atomicadd risulta migliore dell'approccio naive.
-
-### Approccio ragionato
-L'approccio ragionato utilizza l'idea della riduzione per evitare somme atomiche concorrenti permettendo tempi ottimali anche nel caso di compute capability inferiori alla 6.0.
-
-Pensando al problema da risolvere quello che si vuole effettivamente andare a fare è ridurre delle righe opportunamente moltiplicate per un moltiplicatore e sottrarre il risultato di tale riduzione all'elemento della funzione obiettivo corrispondente a tale riga.
-
-La soluzione migliore ottenuta è la seguente:
-
-- Si utilizzano dei blocchi bidimensionali di dimensione (32,k) ed una grid di dimensione (1, roof(righeTrasposta/k))
-- Per come funziona la suddivisione in warp di un blocco si avranno warp di 32 thread consecutivi che lavorano su 32 elementi consecutivi della stessa riga della matrice
-- Ogni thread di un warp carica il proprio elemento della matrice ed il rispettivo moltiplicatore, dato che i thread del warp accedono ad elementi consecutivi della riga della trapsosta si avranno accessi coalescenti sia
-per i dati della matrice sia per i moltiplicatori.
-- Si utilizza una riduzione attraverso le primitive di comunicazione tra thread di un warp, ovvero si utilizza una riduzione intra-warp.
-- Un thread per warp aggiorna la funzione obiettivo nella locazione relativa alla riga su cui ha lavorato.
-- Si utilizza un grid stride per scorrere tutta la riga della matrice
-
-Tale soluzione permette di evitare completamente l'utilizzo delle operazioni di somma atomica.
-
-Un ulteriore ottimizzazione consiste nell'eseguire una somma prima di passare alla riduzione: ogni thread esegue già una somma quando carica il proprio valore della matrice, caricandone due invece che 1.
-
-Rimane un problema di questa soluzione: quando il risultato di una riduzione viene sottratto nella funzione obiettivo si ha una divergenza nel warp, quello che invece sarebbe più efficiente sarebbe
- di fare eseguire l'aggiornamento da un unico warp (invece che tanti quanti l'altezza del blocco) ma qualsiasi soluzione provata aggiunge un overhead superiore al tempo impiegato lasciando l'aggiornamento a warp diversi.
-
-
-
-## Aggiornamento della tabella
 
 # Risultati sperimentali
 
