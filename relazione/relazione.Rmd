@@ -18,7 +18,7 @@ output:
   pdf_document:
     toc: true
     extra_dependencies:
-      algorithm2e: ["ruled"]
+      algorithm2e: ["ruled", "linesnumbered"]
 ---
 
 ```{r setup, include=FALSE}
@@ -97,7 +97,7 @@ Se in base sono presenti uno o più valori uguali a 0, si dice che la base è *d
 
 Esistono diverse implementazioni del metodo del simplesso, per questo progetto verrà implementato il cosiddetto *simplesso a due fasi con il metodo del tableau*
 
-![Esempio di problema con due variabili. Il vertice evidenziato in blu è la soluzione](img/polyhedra.png)
+![Esempio di problema con due variabili sul piano cartesiano. La regione evidenziata è il poliedro costruito sui vincoli. Il vertice evidenziato in blu scuro è la soluzione.](img/polyhedra.png)
 
 ### Cos'è il tableau
 Il tableau di un simplesso è la struttura dati su cui viene eseguito l'algoritmo del simplesso.
@@ -240,7 +240,7 @@ $T[0][n..n+m] \gets 0$\;
 \end{algorithm}
 
 ### Simplesso a due fasi
-Si veda l'algoritmo \ref{alg:2phases-simplex}
+Si veda l'algoritmo \ref{alg:2phases-simplex}.
 \begin{algorithm}
 \caption{2Phases-Simplex}
 \label{alg:2phases-simplex}
@@ -253,26 +253,20 @@ $(T,\mathcal{B}) \gets Simplex-Phase1(A, b)$\;
 \end{algorithm}
 
 # Scelte implementative
-## Schema di parallelizzazione
-Per introdurre parallelismo si è deciso di parallelizzare le singole operazioni svolte sui vettori e sulle matrici, mantenendo intatta la struttura dell'algoritmo.
-
-Così facendo non si prevede una riduzione della complessità teorica dell'algoritmo, ma ottenere un miglioramento empirico sui tempi necessari.
 
 ## Gestione della memoria
-Implementando gli algoritmi in CUDA, merita particolare risalto il modo in cui viene organizzata la memoria:
+- I dati del problema originale sono memorizzati in memoria host, mentre il tableau viene costruito e memorizzato nella memoria globale della scheda video.
 
-- i dati del problema originale sono memorizzati in memoria host, mentre il tableau viene costruito e memorizzato nella memoria globale della scheda video
+- I dati del problema originale vengono memorizzati utilizzando memoria *page-locked*, questo per permettere i trasferimenti di memoria in parallelo con i CUDA Stream (e quindi ottimizzare la fase di costruzione del tableau in global memory).
 
-- i dati del problema originale vengono memorizzati utilizzando memoria *page-locked*, questo per permettere i trasferimenti di memoria in parallelo con i CUDA Stream (e quindi ottimizzare la fase di costruzione del tableau in global memory)
+- Il vettore della base è memorizzato come memoria *mapped page-locked*, in modo da potervi accedere sia lato host che lato GPU in qualsiasi momento senza dover gestire i trasferimenti.
 
-- il vettore della base è memorizzato come memoria *mapped page-locked*, in modo da potervi accedere sia lato host che lato GPU in qualsiasi momento senza dover gestire i trasferimenti
-
-- siccome l'algoritmo opera spesso su singole righe o colonne è fondamentale memorizzare i dati in memoria globale in modo da minimizzare il numero di accessi strided o disallineati. Per questo motivi si è deciso il seguente schema di memorizzazione (visibile in figura \ref{fig:memory}):
+- Siccome l'algoritmo opera spesso su singole righe o colonne è fondamentale memorizzare i dati in memoria globale in modo da minimizzare il numero di accessi strided o disallineati. Per questo motivi si è deciso il seguente schema di memorizzazione (visibile in figura \ref{fig:memory}):
     
-    - la matrice del tableau viene allocata con *cudaMallocPitch* ed è memorizzata in maniera *lineare* per **colonne**. In altre parole l'implementazione utilizza il tableau trasposto. L'algoritmo infatti accede più spesso ai vettori delle variabili che ai vettori dei vincoli.
-    Per l'accesso ai singoli vincoli (in questo caso le colonne della matrice memorizzata in global memory) si è visto che l'approccio migliore (dal punto di vista del tempo necessario ad eseguire l'operazione) è quello di utilizzare comunque gli accessi strided.
+    - la matrice del tableau è memorizzata linearizzata per **colonne**. In altre parole l'implementazione utilizza il tableau trasposto, ossia le colonne del tableau sono i vincoli del problema, mentre le righe sono le variabili. L'algoritmo, infatti, tende di più ad accedere ai vettori delle singole variabili che a quelli dei singoli vincoli.
+    Per copiare singole colonne della matrice in vettori in global memory si è visto che l'approccio migliore (dal punto di vista del tempo necessario ad eseguire l'operazione) è quello di utilizzare comunque gli accessi strided, invece di altri pattern di accesso più efficienti dal punto di vista della bandwith utilizzata (Es. copiare un tile della matrice in shared memory e poi copiare la colonna desiderata dalla shared memory in global memory);
     
-    - il vettore dei termini noti non viene memorizzato in fondo al tableau, ma nella prima riga della matrice. In questo modo nel passaggio dalla fase 1 alla fase 2 non è necessario spostare la colonna nella matrice, ma è sufficiente troncare il numero di righe senza dover intervenire sull'allocazione della memoria.
+    - il vettore dei termini noti non viene memorizzato in fondo al tableau, ma nella prima riga della matrice. In questo modo nel passaggio dalla fase 1 alla fase 2 non è necessario spostare la colonna nella matrice, ma è sufficiente troncare il numero di righe senza dover intervenire sull'allocazione della memoria;
 
     - il vettore dei costi non viene memorizzato nella matrice del tableau, ma in un vettore a parte e il valore della funzione obiettivo è nel primo elemento di questo vettore (analogalmente a quanto fatto con il vettore dei termini noti al punto precedente).
 
@@ -280,5 +274,59 @@ Implementando gli algoritmi in CUDA, merita particolare risalto il modo in cui v
 knitr::include_graphics("img/memory.png")
 ```
 
+## Schema di parallelizzazione
+Per introdurre parallelismo si è deciso di parallelizzare le singole operazioni svolte sui vettori e sulle matrici, mantenendo intatta la struttura dell'algoritmo.
+
+Così facendo non si prevede una riduzione della complessità teorica dell'algoritmo, ma ottenere un miglioramento empirico sul tempo necessario a risolvere un'istanza rispetto a un'algoritmo puramente seriale.
+
+### Creazione tableau (Algoritmo \ref{alg:simplex-phase1}, righe 1-16)
+Il tableau viene creato a partire dai dati del problema (matrice dei vincoli già linearizzata per colonne, vettore dei termini noti e dei coefficienti della funzione obiettivo).
+Per prima cosa si istanziano in global memory:
+  
+- il vettore che memorizza la matrice dei vincoli e il vettore dei termini noti con *cudaMallocPitch* di dimensione $m\times (n+2m+1)$. La larghezza reale della matrice (in byte) in memoria viene salvata nel campo *pitch* di *tabular_t*. Per comodità si salvano in due campi distinti di *tabular_t* i puntatori al vettore dei termini noti (lo stesso della matrice) e quello alla matrice dei vincoli (la seconda riga della matrice);
+    
+- il vettore dei costi di dimensione $n+2m+1$ con *cudaMalloc*
+
+- il vettore della base di dimensione $m$ utilizzando *cudaHostAlloc* con il flag *cudaHostAllocMapped*
+
+Successivamente si procede a riempire questi vettori. Per fare ciò si utilizzano sei cudaStream differenti:
+
+1. il primo stream imposta a 0 i primi $n+m+1$ valori del vettore dei costi a 0 con *cudaMemset*,
+
+2. il secondo stream imposta a 1 i restanti $m$ valori della funzione dei costi (utilizzando un kernel apposito),
+
+3. il terzo stream copia la matrice dei vincoli dalla memoria host alla matrice in global memory con *cudaMemcpy2D*,
+
+4. il quarto stream costruisce in coda alla matrice dei vincoli le due matrici di identità, una per le variabili slack e una per le variabili artificiali, utilizzando un kernel apposito,
+
+5. il quinto stream copia il vettore degli indicatori dalla memoria host alla global memory con *cudaMemcpy*,
+
+6. il sesto stream inizializza il vettore della base con numeri progressivi da $n+m$ a $n+2m-1$ con un kernel apposito.
+
+Una volta terminata questa prima fase si procede a scandire il vettore dei termini noti per verificare che tutti i valori siano maggiori o uguali a 0 (in modo che la base iniziale sia ammissibile). Se un elemento è negativo viene lanciato un nuovo kernel (tramite parallelismo dinamico) che inverte i segni a tutti gli elementi della colonna corrispondente. Questo equivale a moltiplicare l'equazione della colonna per -1.
+
+### Aggiornamento funzione obiettivo (Algoritmo \ref{alg:simplex-phase1}, righe 17-21 e Algoritmo \ref{alg:simplex-phase2}, righe 3-7)
+Lo scopo di questa operazione è quello di azzerare tutti gli elementi del vettore dei costi in corrispondenza delle variabili in base (una variabile è in base se nel suo vettore è presente un solo elemento a 1 e il resto è a 0).
+
+<!-- Simone continua tu :-) -->
+
+### Verifica di degenerazione (Algoritmo \ref{alg:simplex-phase1}, riga 26)
+Per verificare se il problema è degenere si scandisce il vettore della base e si verifica se l'elemento in questione sia compreso tra $n+m$ e $n+2m$ (non compreso). Se sì, si incrementa di 1 (con *atomicAdd*) un contatore in global memory e una volta terminata la scansione si controlla se il valore di questo contatore sia maggiore di 0.
+
+### Sostituzione vettore dei costi (Algoritmo \ref{alg:simplex-phase2}, righe 1-2)
+
+### Ricerca dell'elemento minimo nel vettore dei costi e in quello degli indicatori (Algoritmo \ref{alg:simplex}, righe 4-5 e 9)
+
+### Verifica di unbounding (Algoritmo \ref{alg:simplex}, riga 6)
+
+### Aggiornamento tableau (Algoritmo \ref{alg:simplex}, righe 12-24)
+#### Considerazioni sulle operazioni in virgola mobile
+
+### Estrazione della soluzione (Algoritmo \ref{alg:simplex}, righe 25-29)
+
 # Risultati sperimentali
+
+## Lettura dell'input
+
+## Misurarazione dei tempi
 
