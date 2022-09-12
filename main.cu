@@ -47,20 +47,23 @@ int main(int argc, const char *argv[])
     }else if (strcmp(argv[1], "-t") == 0)
     {
         fprintf(stderr, "Running a benchmark (max 8192*8192)... \n\n\n");
-        int side = 256;
+        int constraints = 256;
         time_t start =  time(NULL);
 
-        while(side <= 8192){
-            fprintf(stdout, "\nCurrent matrix: %d*%d\n\n", side, side);
-            problem_t *benchmarkProblem = generateRandomProblem(side, side, side, +1, +100);
-            TYPE *solution = (TYPE *)(malloc(BYTE_SIZE(benchmarkProblem->vars)));
-            TYPE optimalValue = 0;
-            twoPhaseMethod(benchmarkProblem, solution, &optimalValue);
-            freeProblem(benchmarkProblem);
-            free(solution);
-            side *= 2;
+        while(constraints <= 8192){
+            int vars = 256;
+            while(vars <= 8192){
+                fprintf(stdout, "\nCurrent matrix: %d*%d\n\n", vars, constraints);
+                problem_t *benchmarkProblem = generateRandomProblem(vars, constraints, vars*100+constraints , +1, +100);
+                TYPE *solution = (TYPE *)(malloc(BYTE_SIZE(benchmarkProblem->vars)));
+                TYPE optimalValue = 0;
+                twoPhaseMethod(benchmarkProblem, solution, &optimalValue);
+                freeProblem(benchmarkProblem);
+                free(solution);
+                vars *= 2;
+            }
+            constraints *= 2;
         }
-
         time_t end =  time(NULL);
         fprintf(stdout, "Benchmark terminato...\n Sono stati necessari %.3lfs", (double) end-start);
         return 0;

@@ -10,7 +10,7 @@ void initCsv()
     time_t timer = time(NULL);
     char time_str[20];
     struct tm *tm_info = localtime(&timer);
-    strftime(time_str, 20, "%Y%m%d%H%M%S", tm_info);
+    strftime(time_str, 20, "%Y%m%d%H%M%S.%d", tm_info);
 
     char fileName[50];
     sprintf(fileName, "..\\data\\measures\\times_%s.txt", time_str);
