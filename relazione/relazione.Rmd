@@ -18,7 +18,7 @@ output:
   pdf_document:
     toc: true
     extra_dependencies:
-      algorithm2e: ["ruled"]
+      algorithm2e: ["ruled", "linesnumbered"]
 ---
 
 ```{r setup, include=FALSE}
@@ -97,7 +97,7 @@ Se in base sono presenti uno o più valori uguali a 0, si dice che la base è *d
 
 Esistono diverse implementazioni del metodo del simplesso, per questo progetto verrà implementato il cosiddetto *simplesso a due fasi con il metodo del tableau*
 
-![Esempio di problema con due variabili. Il vertice evidenziato in blu è la soluzione](img/polyhedra.png)
+![Esempio di problema con due variabili sul piano cartesiano. La regione evidenziata è il poliedro costruito sui vincoli. Il vertice evidenziato in blu scuro è la soluzione.](img/polyhedra.png)
 
 ### Cos'è il tableau
 Il tableau di un simplesso è la struttura dati su cui viene eseguito l'algoritmo del simplesso.
@@ -149,7 +149,7 @@ $x[0..n-1] \gets 0$\;
 \Return{$(x, \mathcal{B}, T[0][n])$} \tcc*[r]{$T[0][n]$ è il valore della funzione obiettivo}
 \end{algorithm}
 
-#### Complessità
+#### Complessità \label{par:complessita}
 Considerando che l'algoritmo non fa altro che esplorare le soluzioni di base ammissibili, l'algoritmo esplora al massimo $O\binom{n + m}{m}$ (con $n$ numero di variabili e $m$ il numero di vincoli).
 
 Nei casi peggiori il simplesso può raggiungere complessità esponenziali. Tuttavia nel corso degli anni si è visto EMPIRICAMENTE come questa complessità venga raggiunta in pochissimi casi specifici, anzi l'algoritmo si è rivelato molto efficiente su problemi "reali", dove in media raggiunge una complessità nell'ordine di $O(mn)$, anche a confronto con altri algoritmi di soluzione (polinomiali per costruzione) come il metodo dei punti interni.
@@ -198,7 +198,7 @@ $\mathcal{B} \gets [n+m,\dots,n+2m-1]$ \tcc*[r]{base iniziale con le variabili a
 \tcc{esprimo la funzione obiettivo solo in funzione delle variabili non di base}
 \For{$i\gets 1\ \text{to}\ m$}{
     \For{$j\gets 0\ \text{to}\ n+2m$}{
-      $T[0][j] \gets T[0][j] - \frac{T[0][\mathcal{B}[i]]}{T[i][\mathcal{B}[i]]}T[i][j]$
+      $T[0][j] \gets T[0][j] - T[0][\mathcal{B}[i]] * T[i][j]$
     }
 }
 
@@ -232,7 +232,7 @@ $T[0][n..n+m] \gets 0$\;
 \tcc{esprimo la funzione obiettivo solo in funzione delle variabili non di base}
 \For{$i\gets 1\ \text{to}\ m$}{
     \For{$j\gets 0\ \text{to}\ n+m$}{
-      $T[0][j] \gets T[0][j] - \frac{T[0][\mathcal{B}[i]]}{T[i][\mathcal{B}[i]]}T[i][j]$
+      $T[0][j] \gets T[0][j] - T[0][\mathcal{B}[i]]*T[i][j]$
     }
 }
 
@@ -240,7 +240,7 @@ $T[0][n..n+m] \gets 0$\;
 \end{algorithm}
 
 ### Simplesso a due fasi
-Si veda l'algoritmo \ref{alg:2phases-simplex}
+Si veda l'algoritmo \ref{alg:2phases-simplex}.
 \begin{algorithm}
 \caption{2Phases-Simplex}
 \label{alg:2phases-simplex}
@@ -253,26 +253,20 @@ $(T,\mathcal{B}) \gets Simplex-Phase1(A, b)$\;
 \end{algorithm}
 
 # Scelte implementative
-## Schema di parallelizzazione
-Per introdurre parallelismo si è deciso di parallelizzare le singole operazioni svolte sui vettori e sulle matrici, mantenendo intatta la struttura dell'algoritmo.
-
-Così facendo non si prevede una riduzione della complessità teorica dell'algoritmo, ma ottenere un miglioramento empirico sui tempi necessari.
 
 ## Gestione della memoria
-Implementando gli algoritmi in CUDA, merita particolare risalto il modo in cui viene organizzata la memoria:
+- I dati del problema originale sono memorizzati in memoria host, mentre il tableau viene costruito e memorizzato nella memoria globale della scheda video.
 
-- i dati del problema originale sono memorizzati in memoria host, mentre il tableau viene costruito e memorizzato nella memoria globale della scheda video
+- I dati del problema originale vengono memorizzati utilizzando memoria *page-locked*, questo per permettere i trasferimenti di memoria in parallelo con i CUDA Stream (e quindi ottimizzare la fase di costruzione del tableau in global memory).
 
-- i dati del problema originale vengono memorizzati utilizzando memoria *page-locked*, questo per permettere i trasferimenti di memoria in parallelo con i CUDA Stream (e quindi ottimizzare la fase di costruzione del tableau in global memory)
+- Il vettore della base è memorizzato come memoria *mapped page-locked*, in modo da potervi accedere sia lato host che lato GPU in qualsiasi momento senza dover gestire i trasferimenti.
 
-- il vettore della base è memorizzato come memoria *mapped page-locked*, in modo da potervi accedere sia lato host che lato GPU in qualsiasi momento senza dover gestire i trasferimenti
-
-- siccome l'algoritmo opera spesso su singole righe o colonne è fondamentale memorizzare i dati in memoria globale in modo da minimizzare il numero di accessi strided o disallineati. Per questo motivi si è deciso il seguente schema di memorizzazione (visibile in figura \ref{fig:memory}):
+- Siccome l'algoritmo opera spesso su singole righe o colonne è fondamentale memorizzare i dati in memoria globale in modo da minimizzare il numero di accessi strided o disallineati. Per questo motivi si è deciso il seguente schema di memorizzazione (visibile in figura \ref{fig:memory}):
     
-    - la matrice del tableau viene allocata con *cudaMallocPitch* ed è memorizzata in maniera *lineare* per **colonne**. In altre parole l'implementazione utilizza il tableau trasposto. L'algoritmo infatti accede più spesso ai vettori delle variabili che ai vettori dei vincoli.
-    Per l'accesso ai singoli vincoli (in questo caso le colonne della matrice memorizzata in global memory) si è visto che l'approccio migliore (dal punto di vista del tempo necessario ad eseguire l'operazione) è quello di utilizzare comunque gli accessi strided.
+    - la matrice del tableau è memorizzata linearizzata per **colonne**. In altre parole l'implementazione utilizza il tableau trasposto, ossia le colonne del tableau sono i vincoli del problema, mentre le righe sono le variabili. L'algoritmo, infatti, tende di più ad accedere ai vettori delle singole variabili che a quelli dei singoli vincoli.
+    Per copiare singole colonne della matrice in vettori in global memory si è visto che l'approccio migliore (dal punto di vista del tempo necessario ad eseguire l'operazione) è quello di utilizzare comunque gli accessi strided, invece di altri pattern di accesso più efficienti dal punto di vista della bandwith utilizzata (Es. copiare un tile della matrice in shared memory e poi copiare la colonna desiderata dalla shared memory in global memory);
     
-    - il vettore dei termini noti non viene memorizzato in fondo al tableau, ma nella prima riga della matrice. In questo modo nel passaggio dalla fase 1 alla fase 2 non è necessario spostare la colonna nella matrice, ma è sufficiente troncare il numero di righe senza dover intervenire sull'allocazione della memoria.
+    - il vettore dei termini noti non viene memorizzato in fondo al tableau, ma nella prima riga della matrice. In questo modo nel passaggio dalla fase 1 alla fase 2 non è necessario spostare la colonna nella matrice, ma è sufficiente troncare il numero di righe senza dover intervenire sull'allocazione della memoria;
 
     - il vettore dei costi non viene memorizzato nella matrice del tableau, ma in un vettore a parte e il valore della funzione obiettivo è nel primo elemento di questo vettore (analogalmente a quanto fatto con il vettore dei termini noti al punto precedente).
 
@@ -280,5 +274,333 @@ Implementando gli algoritmi in CUDA, merita particolare risalto il modo in cui v
 knitr::include_graphics("img/memory.png")
 ```
 
-# Risultati sperimentali
+## Schema di parallelizzazione
+Per introdurre parallelismo si è deciso di parallelizzare le singole operazioni svolte sui vettori e sulle matrici, mantenendo intatta la struttura dell'algoritmo.
 
+Così facendo non si prevede una riduzione della complessità teorica dell'algoritmo, ma ottenere un miglioramento empirico sul tempo necessario a risolvere un'istanza rispetto a un'algoritmo puramente seriale.
+
+### Creazione tableau (Algoritmo \ref{alg:simplex-phase1}, righe 1-16)
+Il tableau viene creato a partire dai dati del problema (matrice dei vincoli già linearizzata per colonne, vettore dei termini noti e dei coefficienti della funzione obiettivo).
+Per prima cosa si istanziano in global memory:
+  
+- il vettore che memorizza la matrice dei vincoli e il vettore dei termini noti con *cudaMallocPitch* di dimensione $m\times (n+2m+1)$. La larghezza reale della matrice (in byte) in memoria viene salvata nel campo *pitch* di *tabular_t*. Per comodità si salvano in due campi distinti di *tabular_t* i puntatori al vettore dei termini noti (lo stesso della matrice) e quello alla matrice dei vincoli (la seconda riga della matrice);
+    
+- il vettore dei costi di dimensione $n+2m+1$ con *cudaMalloc*
+
+- il vettore della base di dimensione $m$ utilizzando *cudaHostAlloc* con il flag *cudaHostAllocMapped*
+
+Successivamente si procede a riempire questi vettori. Per fare ciò si utilizzano sei cudaStream differenti:
+
+1. il primo stream imposta a 0 i primi $n+m+1$ valori del vettore dei costi a 0 con *cudaMemset*,
+
+2. il secondo stream imposta a 1 i restanti $m$ valori della funzione dei costi (utilizzando un kernel apposito),
+
+3. il terzo stream copia la matrice dei vincoli dalla memoria host alla matrice in global memory con *cudaMemcpy2D*,
+
+4. il quarto stream costruisce in coda alla matrice dei vincoli le due matrici di identità, una per le variabili slack e una per le variabili artificiali, utilizzando un kernel apposito,
+
+5. il quinto stream copia il vettore degli indicatori dalla memoria host alla global memory con *cudaMemcpy*,
+
+6. il sesto stream inizializza il vettore della base con numeri progressivi da $n+m$ a $n+2m-1$ con un kernel apposito.
+
+Una volta terminata questa prima fase si procede a scandire il vettore dei termini noti per verificare che tutti i valori siano maggiori o uguali a 0 (in modo che la base iniziale sia ammissibile). Se un elemento è negativo viene lanciato un nuovo kernel (tramite parallelismo dinamico) che inverte i segni a tutti gli elementi della colonna corrispondente. Questo equivale a moltiplicare l'equazione della colonna per -1.
+
+### Aggiornamento funzione obiettivo (Algoritmo \ref{alg:simplex-phase1}, righe 17-21 e Algoritmo \ref{alg:simplex-phase2}, righe 3-7)
+Lo scopo di questa operazione è quello di azzerare tutti gli elementi del vettore dei costi in corrispondenza delle variabili in base (una variabile è in base se nel suo vettore è presente un solo elemento a 1 e il resto è a 0).
+
+Per fare ciò si effettuano una serie di eliminazioni di Gauss sottraendo al vettore dei costi tutte le righe della matrice opportunatamente moltiplicate per il valore della $i$-esima variabile di base nel vettore dei costi.
+
+Per fare questa operazione sono stati provati due approcci:
+
+- 
+
+### Verifica di degenerazione (Algoritmo \ref{alg:simplex-phase1}, riga 26)
+Per verificare se il problema è degenere si scandisce il vettore della base e si verifica se l'elemento in questione sia compreso tra $n+m$ e $n+2m$ (non compreso). Se sì, si incrementa di 1 (con *atomicAdd*) un contatore in global memory e una volta terminata la scansione si controlla se il valore di questo contatore sia maggiore di 0.
+
+### Sostituzione vettore dei costi (Algoritmo \ref{alg:simplex-phase2}, righe 1-2)
+
+
+### Ricerca dell'elemento minimo nel vettore dei costi e in quello degli indicatori (Algoritmo \ref{alg:simplex}, righe 4-5 e 9)
+
+### Verifica di unbounding (Algoritmo \ref{alg:simplex}, riga 6)
+
+### Aggiornamento tableau (Algoritmo \ref{alg:simplex}, righe 12-24)
+#### Considerazioni sulle operazioni in virgola mobile
+
+### Estrazione della soluzione (Algoritmo \ref{alg:simplex}, righe 25-29)
+
+# Risultati sperimentali
+Al fine di analizzare le prestazioni del solver è stato predisposta una funzione di benchmark con dati generati da un generatore casuale di istanze.
+
+Il benchmark consiste nella risoluzione di una serie di problemi con dimensione crescente a partire da 256 variabili per 256 vincoli a 8192 variabili per 8192 vincoli. Il passo tra un benchmark e l'altro è esponenziale sulle potenze di due.
+
+Per i benchmark il generatore utilizza come seed la dimensione del problema, per cui si andranno
+a generare ogni volta gli stessi problemi. In questo modo è possibile rieseguire il benchmark
+su dispositivi diversi e poter confrontare le prestazioni.
+
+## Misurazione dei tempi
+Per misurare i tempi sono stati utilizzati gli eventi di CUDA così come visto a lezione e sulla guida ufficiale di NVIDIA.
+Nonostante il metodo *cudaEventElapsedTime* misuri i tempi in ms, per evitare numeri eccessivamente piccoli (soprattutto sulle istanze più piccole) i tempi dei benchmark sono espressi in $\mu$s (ottenuti moltiplicando il valore della misurazione per $1000$).
+
+Come già discusso nel paragrafo \ref{par:complessita} sulla complessità del simplesso, non ha molto senso misurare il tempo globale dell'algoritmo, per cui si è deciso di misurare i tempi delle singole operazioni che lo compongono, in particolare il tempo necessario a svolgere una singola iterazione del ciclo ricerca del pivot-aggiornamento del tableau (algoritmo \ref{alg:simplex} da riga 4 a riga 24), che d'ora in poi chiameremo **ciclo di solve** per semplicità.
+
+Tutte le misurazioni vengono salvate su file csv per essere analizzate utilizzando il software R.
+
+### Tempo per il solve
+```{r, echo=FALSE, warning=FALSE}
+
+mx250_256 <- read.csv("./../data/measures/mx250/mx250_256.txt")
+mx250_512 <- read.csv("./../data/measures/mx250/mx250_512.txt")
+mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
+mx250_2048 <- read.csv("./../data/measures/mx250/mx250_2048.txt")
+mx250_4096 <- read.csv("./../data/measures/mx250/mx250_4096.txt")
+mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
+
+##256x256##
+
+mantenere <- c("operation","elapsed_time")
+data_mx250_256 <- subset(mx250_256, select = mantenere)
+data_mx250_256["operation"][data_mx250_256["operation"] == "gauss1" | data_mx250_256["operation"] == "gauss2"] <- "gauss"
+data_mx250_256 <- aggregate(data_mx250_256$elapsed_time, by=list(Category=data_mx250_256$operation),FUN=sum)
+
+transposed_data_mx250_256 <- t(data_mx250_256)
+varNames <- transposed_data_mx250_256[1,]
+colnames(transposed_data_mx250_256) <- transposed_data_mx250_256[1,]
+transposed_data_mx250_256 <- transposed_data_mx250_256[-c(1),]
+transposed_data_mx250_256 <-
+as.numeric(transposed_data_mx250_256)
+##512x512##
+
+data_mx250_512 <- subset(mx250_512, select = mantenere)
+data_mx250_512["operation"][data_mx250_512["operation"] == "gauss1" | data_mx250_512["operation"] == "gauss2"] <- "gauss"
+data_mx250_512 <- aggregate(data_mx250_512$elapsed_time, by=list(Category=data_mx250_512$operation),FUN=sum)
+
+transposed_data_mx250_512 <- t(data_mx250_512)
+colnames(transposed_data_mx250_512) <- transposed_data_mx250_512[1,]
+transposed_data_mx250_512 <- transposed_data_mx250_512[-c(1),]
+transposed_data_mx250_512 <-
+as.numeric(transposed_data_mx250_512)
+
+##1024x1024##
+
+data_mx250_1024 <- subset(mx250_1024, select = mantenere)
+data_mx250_1024["operation"][data_mx250_1024["operation"] == "gauss1" | data_mx250_1024["operation"] == "gauss2"] <- "gauss"
+data_mx250_1024 <- aggregate(data_mx250_1024$elapsed_time, by=list(Category=data_mx250_1024$operation),FUN=sum)
+
+transposed_data_mx250_1024 <- t(data_mx250_1024)
+colnames(transposed_data_mx250_1024) <- transposed_data_mx250_1024[1,]
+transposed_data_mx250_1024 <- transposed_data_mx250_1024[-c(1),]
+transposed_data_mx250_1024 <-
+as.numeric(transposed_data_mx250_1024)
+
+##2048x2048##
+
+data_mx250_2048 <- subset(mx250_2048, select = mantenere)
+data_mx250_2048["operation"][data_mx250_2048["operation"] == "gauss1" | data_mx250_2048["operation"] == "gauss2"] <- "gauss"
+data_mx250_2048 <- aggregate(data_mx250_2048$elapsed_time, by=list(Category=data_mx250_2048$operation),FUN=sum)
+
+transposed_data_mx250_2048 <- t(data_mx250_2048)
+colnames(transposed_data_mx250_2048) <- transposed_data_mx250_2048[1,]
+transposed_data_mx250_2048 <- transposed_data_mx250_2048[-c(1),]
+transposed_data_mx250_2048 <-
+as.numeric(transposed_data_mx250_2048)
+
+##4096x4096##
+
+data_mx250_4096 <- subset(mx250_4096, select = mantenere)
+data_mx250_4096["operation"][data_mx250_4096["operation"] == "gauss1" | data_mx250_4096["operation"] == "gauss2"] <- "gauss"
+data_mx250_4096 <- aggregate(data_mx250_4096$elapsed_time, by=list(Category=data_mx250_4096$operation),FUN=sum)
+
+transposed_data_mx250_4096 <- t(data_mx250_4096)
+colnames(transposed_data_mx250_4096) <- transposed_data_mx250_4096[1,]
+transposed_data_mx250_4096 <- transposed_data_mx250_4096[-c(1),]
+transposed_data_mx250_4096 <-
+as.numeric(transposed_data_mx250_4096)
+
+#data_mx250_4096$edge <- c(rep(4096, 6))
+
+##8192x8192##
+
+data_mx250_8192 <- subset(mx250_8192, select = mantenere)
+data_mx250_8192["operation"][data_mx250_8192["operation"] == "gauss1" | data_mx250_8192["operation"] == "gauss2"] <- "gauss"
+data_mx250_8192 <- aggregate(data_mx250_8192$elapsed_time, by=list(Category=data_mx250_8192$operation),FUN=sum)
+
+transposed_data_mx250_8192 <- t(data_mx250_8192)
+colnames(transposed_data_mx250_8192) <- transposed_data_mx250_8192[1,]
+transposed_data_mx250_8192 <- transposed_data_mx250_8192[-c(1),]
+transposed_data_mx250_8192 <- as.numeric(transposed_data_mx250_8192)
+
+######## proviamo a fare il grafico della percentuale di tempo utilizzata dal solve #####
+total <- rbind(transposed_data_mx250_256, transposed_data_mx250_512)
+total <- rbind(total, transposed_data_mx250_1024)
+total <- rbind(total, transposed_data_mx250_2048)
+total <- rbind(total, transposed_data_mx250_4096)
+total <- rbind(total, transposed_data_mx250_8192)
+totalDF <- as.data.frame(total)
+
+colnames(totalDF) <- varNames
+
+
+totalDF <- (totalDF/rowSums(totalDF))*100
+mantenere2 <- c("solve")
+totalDF <- subset(totalDF, select = mantenere2)
+totalDF$edge <- c("256", "512", "1024", "2048", "4096", "8192")
+
+plot(data = totalDF, solve~edge, main = "Percentuale di tempo occupata dal ciclo di solve", type = 'b', xlab = "Dimensione lato matrice", ylab = "Percentuale tempo in solve")
+```
+Come possibile notare dal grafico, per l'esecuzione delle istanze di benchmarking si ha un tempo speso nella esecuzione del ciclo di solving superiore al 99% del tempo totale già per matrici di dimensione 256x256, per cui ad una riduzione della durata di una singola iterazione di tale ciclo corrisponde una riduzione nel tempo di esecuzione e rispettiva risoluzione del problema di partenza.
+Di seguito si nota come il tempo medio per una singola esecuzione del ciclo varia al variare della dimensione della matrice.
+
+
+```{r, echo=FALSE}
+mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
+mx250_2048 <- read.csv("./../data/measures/mx250/mx250_2048.txt")
+mx250_4096 <- read.csv("./../data/measures/mx250/mx250_4096.txt")
+mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
+
+rtx3070_1024 <- read.csv("./../data/measures/rtx3070/rtx3070_1024.txt")
+rtx3070_2048 <- read.csv("./../data/measures/rtx3070/rtx3070_2048.txt")
+rtx3070_4096 <- read.csv("./../data/measures/rtx3070/rtx3070_4096.txt")
+rtx3070_8192 <- read.csv("./../data/measures/rtx3070/rtx3070_8192.txt")
+
+times_mx250_1024 <- subset(mx250_1024, vars == "3073" & operation == "solve")
+times_mx250_2048 <- subset(mx250_2048, vars == "6145" & operation == "solve")
+times_mx250_4096 <- subset(mx250_4096, vars == "12289" & operation == "solve")
+times_mx250_8192 <- subset(mx250_8192, vars == "24577" & operation == "solve")
+
+times_rtx3070_1024 <- subset(rtx3070_1024, vars == "3073" & operation == "solve")
+times_rtx3070_2048 <- subset(rtx3070_2048, vars == "6145" & operation == "solve")
+times_rtx3070_4096 <- subset(rtx3070_4096, vars == "12289" & operation == "solve")
+times_rtx3070_8192 <- subset(rtx3070_8192, vars == "24577" & operation == "solve")
+
+############ 1024 ##########
+
+dta_A <- mean(times_mx250_1024$elapsed_time)
+dta_B <- mean(times_rtx3070_1024$elapsed_time)
+
+mx250_Data <- dta_A
+rtx3070_Data <- dta_B
+
+############ 2048 ##########
+
+dta_A <- mean(times_mx250_2048$elapsed_time)
+dta_B <- mean(times_rtx3070_2048$elapsed_time)
+
+mx250_Data <- c(mx250_Data, dta_A)
+rtx3070_Data <- c(rtx3070_Data, dta_B)
+
+############ 4096 ##########
+
+dta_A <- mean(times_mx250_4096$elapsed_time)
+dta_B <- mean(times_rtx3070_4096$elapsed_time)
+
+mx250_Data <- c(mx250_Data, dta_A)
+rtx3070_Data <- c(rtx3070_Data, dta_B)
+
+########### 8192 ###########
+
+dta_A <- mean(times_mx250_8192$elapsed_time)
+dta_B <- mean(times_rtx3070_8192$elapsed_time)
+
+mx250_Data <- c(mx250_Data, dta_A)
+rtx3070_Data <- c(rtx3070_Data, dta_B)
+
+#### preparazione dataframes ####
+edge <- c(1024,2048,4096,8192)
+
+mx250_Data <- data.frame(mx250_Data, edge)
+rtx3070_Data <- data.frame(rtx3070_Data, edge)
+
+colnames(mx250_Data) <- c("time", "edge")
+colnames(rtx3070_Data) <- c("time", "edge")
+
+plot(data = mx250_Data, time~edge, main = "Tempo per singolo ciclo di solve", type = 'b', xlab = "Dimensione lato matrice", ylab = "Tempo per ciclo", col = "black")
+lines(data = rtx3070_Data, time~edge, type = 'b', col = "green")
+legend("topleft", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
+```
+Si può notare come il tempo per singolo ciclo cresce non linearmente all'aumentare della dimensione del problema, come possibile intuire dall'introduzione teorica all'algoritmo, inoltre all'aumentare della dimensione del problema si nota come anche la differenza di tempo necessario per l'esecuzione del ciclo tra schede video con diverse prestazioni tende ad aumentare.
+
+```{r, echo=FALSE}
+mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
+mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
+
+rtx3070_1024 <- read.csv("./../data/measures/rtx3070/rtx3070_1024.txt")
+rtx3070_8192 <- read.csv("./../data/measures/rtx3070/rtx3070_8192.txt")
+  
+mx250_1024 <- subset(mx250_1024, vars == "3073" & operation == "solve")
+mx250_8192 <- subset(mx250_8192, vars == "24577" & operation == "solve")
+
+rtx3070_1024 <- subset(rtx3070_1024, vars == "3073" & operation == "solve")
+
+rtx3070_8192 <- subset(rtx3070_8192, vars == "24577" & operation == "solve")
+  
+difference_1024 <- mean(mx250_1024$elapsed_time)-mean(rtx3070_1024$elapsed_time)
+difference_8192 <- mean(mx250_8192$elapsed_time)-mean(rtx3070_8192$elapsed_time) 
+
+rapporto_1024 <- mean(mx250_1024$elapsed_time)/mean(rtx3070_1024$elapsed_time) 
+rapporto_8192 <- mean(mx250_8192$elapsed_time)/mean(rtx3070_8192$elapsed_time)
+
+```
+Infatti per problemi di dimensione 1024x1024 si ha che una rtx3070 risulta utilizzare in media `r round(difference_1024/1000, digits = 2)`ms in meno della mx250, differenza che raggiunge i `r round(difference_8192/1000, digits=2)`ms nel caso di un problema di dimensione 8192x8192. La maggiore efficienza della rtx 3070 passa da `r round(rapporto_1024, digits = 1)`x rispetto alla mx 250 per un problema 1024x1024 a `r round(rapporto_8192, digits = 1)`x nel caso di un problema 8192x8192.
+
+```{r, echo=FALSE}
+mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
+mx250_2048 <- read.csv("./../data/measures/mx250/mx250_2048.txt")
+mx250_4096 <- read.csv("./../data/measures/mx250/mx250_4096.txt")
+mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
+
+rtx3070_1024 <- read.csv("./../data/measures/rtx3070/rtx3070_1024.txt")
+rtx3070_2048 <- read.csv("./../data/measures/rtx3070/rtx3070_2048.txt")
+rtx3070_4096 <- read.csv("./../data/measures/rtx3070/rtx3070_4096.txt")
+rtx3070_8192 <- read.csv("./../data/measures/rtx3070/rtx3070_8192.txt")
+
+times_mx250_1024 <- subset(mx250_1024, vars == "3073" & operation == "solve")
+times_mx250_2048 <- subset(mx250_2048, vars == "6145" & operation == "solve")
+times_mx250_4096 <- subset(mx250_4096, vars == "12289" & operation == "solve")
+times_mx250_8192 <- subset(mx250_8192, vars == "24577" & operation == "solve")
+
+times_rtx3070_1024 <- subset(rtx3070_1024, vars == "3073" & operation == "solve")
+times_rtx3070_2048 <- subset(rtx3070_2048, vars == "6145" & operation == "solve")
+times_rtx3070_4096 <- subset(rtx3070_4096, vars == "12289" & operation == "solve")
+times_rtx3070_8192 <- subset(rtx3070_8192, vars == "24577" & operation == "solve")
+
+par(mfrow=c(2,2))
+
+############ 1024 ##########
+
+dta_A <- density(times_mx250_1024$elapsed_time, na.rm = TRUE)
+dta_B <- density(times_rtx3070_1024$elapsed_time, na.rm = TRUE)
+
+plot(dta_A, col = "black", main = "Matrice 1024x1024", xlim = c(0,6000), ylim = c(0, max(dta_A$y, dta_B$y)))
+lines(dta_B, col = "green")
+legend("topright", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
+
+############ 2048 ##########
+
+dta_A <- density(times_mx250_2048$elapsed_time, na.rm = TRUE)
+dta_B <- density(times_rtx3070_2048$elapsed_time, na.rm = TRUE)
+
+plot(dta_A, col = "black", main = "Matrice 2048x2048", ylim = c(0, max(dta_A$y, dta_B$y)))
+lines(dta_B, col = "green")
+legend("topright", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
+
+############ 4096 ##########
+
+dta_A <- density(times_mx250_4096$elapsed_time, na.rm = TRUE)
+dta_B <- density(times_rtx3070_4096$elapsed_time, na.rm = TRUE)
+
+plot(dta_A, col = "black", main = "Matrice 4096x4096", ylim = c(0, max(dta_A$y, dta_B$y)))
+lines(dta_B, col = "green")
+legend("topright", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
+
+########### 8192 ###########
+
+dta_A <- density(times_mx250_8192$elapsed_time, na.rm = TRUE)
+dta_B <- density(times_rtx3070_8192$elapsed_time, na.rm = TRUE)
+
+plot(dta_A, col = "black", main = "Matrice 8192x8192", ylim = c(0, max(dta_A$y, dta_B$y)))
+lines(dta_B, col = "green")
+legend("topright", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
+
+par(mfrow=c(1,1))
+```
