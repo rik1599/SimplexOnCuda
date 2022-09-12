@@ -17,7 +17,8 @@ abstract: |
 output:
   pdf_document:
     toc: true
-    extra_dependencies: ["multirow"]
+    extra_dependencies:
+      algorithm2e: ["ruled"]
 ---
 
 ```{r setup, include=FALSE}
@@ -38,7 +39,7 @@ Nell'ambito della Ricerca Operativa (Operations Research) uno dei principali arg
 
 con $x \in \mathbb{R}^n$, $c \in \mathbb{R}^n$, $A \in \mathbb{R}^{m \times n}$, $b \in \mathbb{R}^{1\times m}$.
 
-In altre parole, si vogliono trovare dei valori per le componenti del vettore $x$ tali da massimizzare (o minimizzare) il valore di una *funzione lineare* (detta **funzione obiettivo**, mentre il vettore $c$ è chiamato **vettore dei costi**), dati una serie di vincoli espressi nel sistema di disequazioni lineari $Ax \lesseqgtr b$ (dove $A$ è detta **matrice dei vincoli** e $b$ **vettore dei termini noti**).
+In altre parole, si vogliono trovare dei valori per le componenti del vettore $x$ (di dimensione $n$) tali da massimizzare (o minimizzare) il valore di una *funzione lineare* variabili (detta **funzione obiettivo**, mentre il vettore $c$ è chiamato **vettore dei costi**), dati una serie di $m$ vincoli espressi nel sistema di disequazioni lineari $Ax \lesseqgtr b$ (dove $A$ è detta **matrice dei vincoli** e $b$ **vettore dei termini noti**).
 
 Questa classe di problemi permette di modellare un gran numero di situazioni reali in molteplici ambiti (ottimizzazione dei costi, creazione di orari, *etc.*), oltre che alcuni problemi NP-hard come il *Knapsack* o il *Vertex Cover*.
 
@@ -50,11 +51,13 @@ Utilizzando i teoremi e le tecniche dell'algebra lineare è stato possibile crea
 ### Problemi risolvibili, non risolvibili, illimitati
 Dato un problema di ottimizzazione, questo può essere di tre tipi:
 
-- avere una o più soluzioni ammissibili (*feasible*): ossia esistono uno o più vettori che moltiplicati per il vettore dei costi assegnano alla funzione obiettivo il valore massimo (o minimo possibile) e tutti i vincoli sono rispettati,
+- ammissibile (*feasible*): ossia esistono uno o più vettori che moltiplicati per il vettore dei costi assegnano alla funzione obiettivo il valore massimo (o minimo possibile) e tutti i vincoli sono rispettati,
 
-- non risolvibili (*infeasible*): se non esistono soluzioni
+- non ammissibile (*infeasible*): se non esistono soluzioni
 
 - illimitati (*unbounded*): se per una o più componenti della soluzione è possibile aumentarne (o ridurne) il valore all'infinito senza mai violare i vincoli
+
+- degeneri (*degenerate*): sono problemi ammissibili in cui più soluzioni di base corrispondono allo stesso vertice del poliedro. In linea teorica possono far ciclare l'algoritmo (ossia l'algoritmo torna a controllare basi già viste in precedenza), ma all'atto pratico questo può essere evitato introducendo delle euristiche. Per semplicità la nostra implementazione una volta riconosciuto un problema come degenere lo segnala all'utente e termina senza cercare di risolverlo.
 
 ## Forma canonica e forma standard
 I problemi di massimizzazione possono essere convertiti in problemi di minimizzazione (e viceversa), così come è possibile manipolare le singole disequazioni.
@@ -72,13 +75,13 @@ Un problema (di massimizzazione) è in forma canonica se è nella forma
 Considerando che qualsiasi disequazione nella forma $\alpha x \leq y$ può essere convertita in una equazione equivalente $\alpha x + \delta = b$ definiamo la forma standard di un problema in forma canonica
 
 \begin{gather*}
-  \max d^T x \\
+  \max (c | 0)^T x \\
   \text{subject to} \\
-  A'x = b \\
+  (A | I)x = b \\
   x \geq 0
 \end{gather*}
 
-con $A' = (A | I) \in \mathbb{R}^{m \times (n + m)}$ e $d = (c | 0) \in \mathbb{R}^{n + m}$
+con $(A | I) \in \mathbb{R}^{m \times (n + m)}$, $(c | 0) \in \mathbb{R}^{n + m}$ e $I$ la matrice di identità di dimensione $m$.
 
 In altre parole aggiungiamo una nuova variabile al problema (detta variabile *slack*) per ogni disequazione.
 
@@ -103,128 +106,157 @@ Si tratta di una matrice composta nel seguente modo:
 
 ![](img/tableau.png)
 
-Nella prima riga della matrice ($R_0$) è presente il vettore dei costi (coefficienti della funzione obiettivo) con i segni invertiti.
+Nella prima riga della matrice ($R_0$) è presente il vettore dei costi.
+Inizialmente il vettore dei costi contiene i coefficienti della funzione obiettivo con segno invertito.
 La base viene memorizzata in un vettore a parte.
 
-### Algoritmo
-1. Controllo se tutti i coefficienti del vettore dei costi sono maggiori o uguali a 0. Se sì, allora il mio problema è risolto e procedo a ricavare la soluzione, altrimenti proseguo
+### Algoritmo di soluzione
+\begin{algorithm}
+\caption{Simplex}
+\label{alg:simplex}
+\KwData{$T \in \mathbb{R}^{(m+1)\times (n+1)}, \mathcal{B}\in \mathbb{N}^m$}
+\KwOut{$x$ come soluzione, $\mathcal{B}$ base della soluzione e $T[0][n]$ valore ottimo della funzione obiettivo OPPURE problema UNBOUNDED}
 
-2. Scansiono il vettore dei costi alla ricerca della *posizione* con l'elemento minimo del vettore ($C_p$). Questa sarà la variabile da far entrare in base^[Si noti che è possibile unire queste prime due fasi in una sola: una volta trovato l'elemento minimo è sufficiente verificare che sia $<0$, se sì allora proseguo, altrimenti termino il ciclo (se il minimo è $\geq 0$, allora anche tutti gli altri elementi del vettore lo sono)]
+$A \gets T[1..m][0..n-1]$ \tcc*[r]{La notazione $[a..b]$ indica una porzione di array dall'indice $a$ all'indice $b$}
+$b \gets T[1..m][n]$\;
+$c \gets T[0][0..n-1]$\;
+\While{$\exists i : c[i] < 0$}{
+  Pick $h \in \{0,\dots,n-1\} : c[h] = \min_{i=0,\dots,n-1} c[i]$\;
+  \If{$\forall i \in \{0,\dots,m-1\} \Rightarrow A[0..m-1][h] \leq 0$}{
+    \Return{problem UNBOUNDED}\;
+  }
+  Pick $k \in \{0,\dots,m-1\} : c[k] = \min_{i=0,\dots,m-1} \left\{ \frac{b[i]}{A[i][h]} \land A[i][h] > 0 \right\}$\;
+  $p \gets A[k][h]$\;
+  $\mathcal{B}[k] \gets h$\;
+  $R_p \gets copy(T[k][0..n])$\;
+  $C_p \gets copy(T[0..m][h+1])$\;
+  \For{$i\gets 0\ \text{to}\ m$}{
+    \For{$j\gets 0\ \text{to}\ n$}{
+      \If{$i = k$}{
+        $T[i][j] = \frac{1}{p}T[i][j]$\;
+      }
+      \Else{
+        $T[i][j] = T[i][j] - \frac{C_p[i]}{p}R_p[j]$\;
+      }
+    }
+  }
+}
 
-3. Costruisco il *vettore degli indicatori* dividendo il vettore dei termini noti con il vettore colonna della variabile che entra in base
-
-4. Trovo la posizione dell'elemento minimo nel vettore degli indicatori ($R_p$).
-Questa operazione serve a individuare quale variabile deve uscire dalla base. 
-
-Infatti, essendo il tableau una matrice di rango pieno, la base sarà sempre composta da tante colonne quanti sono i vincoli e la scelta della variabile uscente dipenderà unicamente dal valore dell'indicatore (al valore dell'indicatore più basso corrisponde al maggiore incremento possibile della funzione obiettivo al passo successivo). Per questo motivo andando a selezionare l'$i$-esima riga del tableau si andrà a sostituire l'$i$-esima variabile contenuta nel vettore della base con la variabile entrante.
-
-5. Individuo il *pivot* $p = R_p \cap C_p$.
-
-6. Siccome una variabile può essere in base solo se nel suo vettore colonna è presente un unico $1$, mentre tutti gli altri componenti sono uguali a $0$, procedo ad aggiornare il tableau tramite operazioni di Gauss:
-  
-    - $R_p = \frac{1}{p} R_p$
-
-    - $R_i = R_i - \frac{C_p[i]}{p} R_p \quad \forall i = 1,\dots,n \land i \neq p$
-    
-    Con $C_p[i]$ l'elemento a riga $i$ del vettore colonna $C_p$.
-
-7. Ritorno al punto 1.
-
-8. Una volta trovato l'ottimo ricavo la soluzione nel seguente modo:
-    - Se una variabile è l'$i$-esima variabile di base leggo il valore di quest'ultima dall'$i$-esima riga del vettore dei termini noti
-    - altrimenti il valore di quella variabile è pari a $0$
-
-    Inoltre leggo il valore ottimo della funzione obiettivo dal primo elemento dell'ultima colonna
+$x[0..n-1] \gets 0$\;
+\For{$i\gets 0\ \text{to}\ m-1$}{
+  $x[\mathcal{B}[i]] \gets b[i]$\;
+}
+\Return{$(x, \mathcal{B}, T[0][n])$} \tcc*[r]{$T[0][n]$ è il valore della funzione obiettivo}
+\end{algorithm}
 
 #### Complessità
-Considerando che l'algoritmo non fa altro che esplorare le soluzioni di base, l'algoritmo esplora al massimo $O\binom{n + m}{m}$ (con $n$ numero di variabili e $m$ il numero di vincoli).
+Considerando che l'algoritmo non fa altro che esplorare le soluzioni di base ammissibili, l'algoritmo esplora al massimo $O\binom{n + m}{m}$ (con $n$ numero di variabili e $m$ il numero di vincoli).
 
-Per cui nei casi peggiori il simplesso può raggiungere complessità esponenziali. Tuttavia nel corso degli anni si è visto EMPIRICAMENTE come questa complessità venga raggiunta in pochissimi casi specifici, anzi l'algoritmo si è rivelato molto efficiente su problemi "reali", dove in media raggiunge una complessità nell'ordine di $O(mn)$, anche a confronto con altri algoritmi di soluzione (polinomiali per costruzione) come il metodo dei punti interni.
+Nei casi peggiori il simplesso può raggiungere complessità esponenziali. Tuttavia nel corso degli anni si è visto EMPIRICAMENTE come questa complessità venga raggiunta in pochissimi casi specifici, anzi l'algoritmo si è rivelato molto efficiente su problemi "reali", dove in media raggiunge una complessità nell'ordine di $O(mn)$, anche a confronto con altri algoritmi di soluzione (polinomiali per costruzione) come il metodo dei punti interni.
 
 Da queste considerazioni si può concludere anche come la complessità del simplesso dipenda molto dall'istanza del problema fornito in input.
 
 ### Fase 1
-In questa fase viene risolto un problema ausiliario
-
+In questa fase si costruisce il tableau e si verifica se il problema di partenza è ammissibile o meno.
+Per fare ciò si risolve il cosiddetto **problema ausiliario**
 \begin{gather*}
-  \max 0x - 1y \\
+  \max (0|-1)^T x \\
   \text{subject to} \\
-  Ax + y = b \\
-  x \geq 0, y \geq 0
+  (A | I | I)x = b \\
+  x \geq 0
 \end{gather*}
+In pratica aggiungo al problema originario $m$ nuove variabili (dette **variabili artificiali**) e cerco di azzerarne la somma negata. Se ciò avviene il problema di partenza è ammissibile e la soluzione di base ottenuta può essere utilizzata come base di partenza per la fase 2 dell'algoritmo, altrimenti il problema originale non è ammissibile.
+Se nella base finale una delle variabili artificiali è rimasta in base il problema è degenere.
+Per lo pseudocodice si veda l'algoritmo \ref{alg:simplex-phase1}.
 
-In altre parole si tratta si inserire $m$ nuove variabili al problema (una per vincolo). Queste sono dette *variabili artificiali*.
+\begin{algorithm}
+\caption{Simplex-Phase1}
+\label{alg:simplex-phase1}
+\KwData{$A \in \mathbb{R}^{m\times n}, b \in \mathbb{R}^m$ in forma standard (senza var. slack)}
+\KwOut{$T \in \mathbb{R}^{(n+m+1)\times (m+1)}$ tableau per la fase 2 e $\mathcal{B}\in \mathbb{N}^m$ base ammissibile OPPURE problema INFEASIBLE o DEGENERE}
 
-Questa fase ha tre scopi:
+\tcc{riempimento tableau}
+$T \in \mathbb{R}^{(m+1)\times (n + 2m + 1)}$\;
+$T[0][0..n+m-1] \gets 0$\;
+$T[0][n+m..n+2m-1] \gets 1$\;
+$T[0][n+2m] \gets 0$\;
+$T[1..m][n+2m] \gets b$\;
+$T[1..m][0..n-1] \gets A$\;
+$T[1..m][n..n+m-1] \gets I$ \tcc*[r]{variabili slack}
+$T[1..m][n+m..n+2m-1] \gets I$ \tcc*[r]{variabili artificiali}
 
-- capire se il problema iniziale è infeasible: in questo caso il valore finale della funzione obiettivo è negativo
+\tcc{Nego eventuali disequazioni con termine noto negativo (in modo da rendere la base iniziale ammissibile)}
+\For{$i\gets 1\ \text{to}\ m$}{
+  \If{$T[i][n+2m] < 0$}{
+    \For{$j\gets 0\ \text{to}\ n+2m$}{
+      $T[i][j] = -T[i][j]$\; 
+    }
+  }
+}
 
-- capire se il problema ha una o più soluzioni degeneri: in questo caso la base ottenuta alla fine di questa fase contiene una o più variabili artificiali
+$\mathcal{B} \gets [n+m,\dots,n+2m-1]$ \tcc*[r]{base iniziale con le variabili artificiali}
+\tcc{esprimo la funzione obiettivo solo in funzione delle variabili non di base}
+\For{$i\gets 1\ \text{to}\ m$}{
+    \For{$j\gets 0\ \text{to}\ n+2m$}{
+      $T[0][j] \gets T[0][j] - \frac{T[0][\mathcal{B}[i]]}{T[i][\mathcal{B}[i]]}T[i][j]$
+    }
+}
 
-- se non si presenta nessuno di questi due casi, fornire in input alla fase successiva una base ammissibile di partenza
+$(x, \mathcal{B}, f) \gets Simplex(T, \mathcal{B})$\;
+\If{$f < 0$}{
+  \Return{problem INFEASIBLE}\;
+}
+\If{$\exists i : n+m \leq\mathcal{B}[i]< n+2m $}{
+  \Return{problem DEGENERE}\;
+}
 
-Ad esempio per il problema
+\tcc{Elimino le variabili artificiali}
+$T[0..m][n+m] \gets copy(T[0..m][n+2m])$\;
+$drop(T[0..m][n+m+1..n+2m])$\;
 
-\begin{gather*}
-  \max - x_1 + x_2 \\
-  \text{subject to} \\
-  x_1 + x_2 \leq 1 \\
-  3x_1 + 2x_2 \leq 6
-\end{gather*}
-
-Il corrispondente problema ausiliario sarà
-
-\begin{gather*}
-  \max 0x_1 + 0x_2 + 0s_1 + 0s_2 - a_1 - a_2 \\
-  \text{subject to} \\
-  x_1 + x_2 + s_1 + a_1 = 1 \\
-  3x_1 + 2x_2 + s_2 + a_2 = 6
-\end{gather*}
-
-Si avrà quindi il seguente tableau
-\begin{tabular}{llllll|l}
-$x_1$ & $x_2$ & $s_1$ & $s_2$ & $a_1$ & $a_2$ & RHS \\ \hline
-0     & 0     & 0     & 0     & 1     & 1     & 0   \\ \hline
-1     & 1     & 1     & 0     & 1     & 0     & 1   \\
-3     & 2     & 0     & 1     & 0     & 1     & 6  
-\end{tabular}
-
-Con base di partenza $B = \{a_1, a_2\}$
-
-Si noti che nonostante $a_1$ e $a_2$ siano in base, la funzione obiettivo è espressa in funzione di esse (le variabili di base
-devono avere come coefficiente della funzione obiettivo 0, altrimenti l'algoritmo non è corretto).
-
-Per risolvere questo problema si sottrae alla prima riga tutte le altre (eliminazione di Gauss):
-$$ R_0 = R_0 - R_i \quad \forall i = 1,\dots,m $$
-
-\begin{tabular}{llllll|l}
-$x_1$ & $x_2$ & $s_1$ & $s_2$ & $a_1$ & $a_2$ & RHS \\ \hline
--4    & -3    & -1    & -1    & 0     & 0     & -7  \\ \hline
-1     & 1     & 1     & 0     & 1     & 0     & 1   \\
-3     & 2     & 0     & 1     & 0     & 1     & 6  
-\end{tabular}
-
-In questo modo la funzione obiettivo non è più espressa in termini delle variabili di base e si può proseguire a risolvere il tableau.
-
-Alla fine di questa fase si otterrà una base ammissibile di partenza per la fase successiva (a meno di problema degenere o infeasible).
+\Return{$(T, \mathcal{B})$}
+\end{algorithm}
 
 ### Fase 2
-Terminata la prima fase si eliminano le variabili artificiali dal tableau e si sostituisce la funzione obiettivo con quella del problema originale.
+Terminata la prima fase si eliminano le variabili artificiali dal tableau e si sostituisce la funzione obiettivo con quella del problema originale, in seguito si procede a risolvere il problema originale. Per lo pseudocodice si veda l'algoritmo \ref{alg:simplex-phase2}.
 
-Durante questa operazione può capitare lo stesso problema visto in fase 1, ossia la funzione obiettivo è espressa in funzione di qualche variabile di base. Anche in questo caso la soluzione è quella di procedere a una serie di eliminazioni di Gauss:
-$$ R_0 = R_0 - \frac{R_0[B[i]]}{R_i[B[i]]} R_i \quad \forall i=1,\dots,m$$
+\begin{algorithm}
+\caption{Simplex-Phase2}
+\label{alg:simplex-phase2}
+\KwData{$T \in \mathbb{R}^{(m+1)\times (n+m+1)}, \mathcal{B} \in \mathbb{N}^m, c \in \mathbb{R}^n$}
+\KwOut{soluzione al problema iniziale OPPURE problema UNBOUNDED}
 
-Con $R_0[B[i]]$ e $R_i[B[i]]$ rispettivamente il valore della prima riga e della $i$-esima riga nella colonna della $i$-esima variabile di base.
+$T[0][0..n-1] \gets -c$\;
+$T[0][n..n+m] \gets 0$\;
 
-Si noti come questo passo sia una generalizzazione di quanto già visto in precedenza per la fase 1.
+\tcc{esprimo la funzione obiettivo solo in funzione delle variabili non di base}
+\For{$i\gets 1\ \text{to}\ m$}{
+    \For{$j\gets 0\ \text{to}\ n+m$}{
+      $T[0][j] \gets T[0][j] - \frac{T[0][\mathcal{B}[i]]}{T[i][\mathcal{B}[i]]}T[i][j]$
+    }
+}
 
-A questo punto si può procedere con l'esecuzione dell'algoritmo del simplesso, con l'aggiunta di un passaggio tra il passo 2. e il passo 3. per controllare se il problema è unbounded: se tutti i coefficienti del vettore colonna che sta per entrare in base sono $\leq 0$ allora il problema è unbounded su quella variabile, altrimenti si può proseguire con la ricerca del pivot.
+\Return{$Simplex(T, \mathcal{B})$}
+\end{algorithm}
 
-# Scelte implementative e algoritmi utilizzati
+### Simplesso a due fasi
+Si veda l'algoritmo \ref{alg:2phases-simplex}
+\begin{algorithm}
+\caption{2Phases-Simplex}
+\label{alg:2phases-simplex}
+\KwData{$A \in \mathbb{R}^{m \times n}, b \in \mathbb{R}^m, c \in \mathbb{R}^n$}
+\KwOut{soluzione al problema OPPURE problema INFEASIBLE o UNBOUNDED o DEGENERE}
+
+$(T,\mathcal{B}) \gets Simplex-Phase1(A, b)$\;
+\Return{$Simplex-Phase2(T, \mathcal{B}, c)$}
+
+\end{algorithm}
+
+# Scelte implementative
 ## Schema di parallelizzazione
-Per introdurre parallelismo si è deciso di parallelizzare i singoli passi che lo compongono, mantenendo invece sequenziale la struttura dell'algoritmo in sè.
+Per introdurre parallelismo si è deciso di parallelizzare le singole operazioni svolte sui vettori e sulle matrici, mantenendo intatta la struttura dell'algoritmo.
 
-Così facendo non si prevede una riduzione della complessità teorica dell'algoritmo, ma ottenere un miglioramento empirico sui tempi necessari a risolvere modelli anche molto complessi (in quanto si va a ridurre la complessità delle singole operazioni sui vettori e sulle matrici).
+Così facendo non si prevede una riduzione della complessità teorica dell'algoritmo, ma ottenere un miglioramento empirico sui tempi necessari.
 
 ## Gestione della memoria
 Implementando gli algoritmi in CUDA, merita particolare risalto il modo in cui viene organizzata la memoria:
@@ -233,101 +265,20 @@ Implementando gli algoritmi in CUDA, merita particolare risalto il modo in cui v
 
 - i dati del problema originale vengono memorizzati utilizzando memoria *page-locked*, questo per permettere i trasferimenti di memoria in parallelo con i CUDA Stream (e quindi ottimizzare la fase di costruzione del tableau in global memory)
 
-- il vettore della base è memorizzato come memoria *mapped page-locked*, in modo da potervi accedere sia lato host che lato GPU
-in qualsiasi momento senza dover gestire i trasferimenti
+- il vettore della base è memorizzato come memoria *mapped page-locked*, in modo da potervi accedere sia lato host che lato GPU in qualsiasi momento senza dover gestire i trasferimenti
 
 - siccome l'algoritmo opera spesso su singole righe o colonne è fondamentale memorizzare i dati in memoria globale in modo da minimizzare il numero di accessi strided o disallineati. Per questo motivi si è deciso il seguente schema di memorizzazione (visibile in figura \ref{fig:memory}):
     
-    - la matrice del tableau viene allocata con *cudaMallocPitch* ed è memorizzata in maniera *lineare* per **colonne**. In altre parole l'implementazione lavorerà sul tableau trasposto. Questo perchè l'algoritmo tende ad accedere più alle singole colonne che alle singole righe. Infatti così facendo sarà necessario implementare solo un kernel che accede alla memoria in maniera strided (laddove la classica memorizzazione per righe avrebbe richiesti tre),
+    - la matrice del tableau viene allocata con *cudaMallocPitch* ed è memorizzata in maniera *lineare* per **colonne**. In altre parole l'implementazione utilizza il tableau trasposto. L'algoritmo infatti accede più spesso ai vettori delle variabili che ai vettori dei vincoli.
+    Per l'accesso ai singoli vincoli (in questo caso le colonne della matrice memorizzata in global memory) si è visto che l'approccio migliore (dal punto di vista del tempo necessario ad eseguire l'operazione) è quello di utilizzare comunque gli accessi strided.
     
-    - il vettore dei termini noti non viene memorizzato in fondo al tableau, ma nella prima riga della matrice. In questo modo nel passaggio dalla fase 1 alla fase 2 non è necessario spostare la colonna nella matrice, ma è sufficiente troncare il numero di righe della matrice da una variabile,
+    - il vettore dei termini noti non viene memorizzato in fondo al tableau, ma nella prima riga della matrice. In questo modo nel passaggio dalla fase 1 alla fase 2 non è necessario spostare la colonna nella matrice, ma è sufficiente troncare il numero di righe senza dover intervenire sull'allocazione della memoria.
 
-    - il vettore dei costi non viene memorizzato nella matrice del tableau, ma in un vettore a parte e il valore della funzione obiettivo è nel primo elemento di questo vettore.
+    - il vettore dei costi non viene memorizzato nella matrice del tableau, ma in un vettore a parte e il valore della funzione obiettivo è nel primo elemento di questo vettore (analogalmente a quanto fatto con il vettore dei termini noti al punto precedente).
 
 ```{r memory, echo=FALSE, fig.cap="Schema di memorizzazione in memoria globale", out.width="50%", fig.align="center"}
 knitr::include_graphics("img/memory.png")
 ```
-
-## Ricerca del pivot e test di ottimalità
-## Eliminazione di Gauss
-Come accennato nell'introduzione teorica all'algoritmo del simplesso in due fasi un passo fondamentale 
-per raggiungere la soluzione consiste nell'esprimere la funzione dei costi in funzione delle variabili non in base, per fare ciò si utilizzano una serie di eliminazionei di gauss.
-
-Ignorando i dettagli del problema, ciò che si vuole fare consiste in:
-
-Dati:
-
-- Una matrice $A_{n*m}$
-
-- Un vettore di moltiplicatori M di dimensione m
-
-- Il vettore dei costi C di dimensione n
-
-Si vuole calcolare C' come:
-
-$$c'_{i} = c_{i} - \sum_{k=0}^{m} (a_{k,i} * m_{k})  \; \; \; \; \; \; 0<i<n$$
-
-L'approccio seriale è banale e consiste nello scorrimento di tutta la matrice e per ogni elemento $a_{a,b}$ si calcola il rispettivo 
-$c'_{b}$.
-
-Risulta possibile ottimizzare l'efficienza di questo algoritmo attraverso il parallelismo.
-
-### Approccio naive
-Per discutere gli approcci paralleli è bene ricordare come i dati su cui l'eliminazione di gauss deve agire sono rappresentati in memoria, ovvero:
-
-- Il vettore dei costi C è rappresentato in un vettore a se di dimensione m, con il primo elemento il valore della funzione obiettivo
-
-- il vettore dei moltiplicatori M è rappresentato da un vettore a se di dimensione naive
-
-- La matrice dei $A_{m*n}$ vincoli è linearizzata per righe, con la prima colonna contenente i termini noti
-
-Dato che la matrice è linearizzata per colonne è più semplice effettuare i ragionamenti sulla trasposta A^{t}.
-
-L'approccio più semplice per parallelizzare questo algoritmo consiste nell'utilizzare delle tiles di thread (blocchi bidimensionali) dove ciascuno di essi si occupa di
-eseguire la stessa operazione della versione seriale, dunque ogni thread in base alla sua posizione globale (posizione nella grid) aggiorna il valore della funzione obiettivo.
-
-Per come è rappresentata la matrice abbiamo che thread consecutivi accedo ad elementi consecutivi sia della matrice sia del vettore dei moltiplicatori, questo permette di sfruttare in modo naturale la coalescenza evitando accessi 
-stride se si scieglie in maniera appropriata la dimensione sull'asse x dei blocchi.
-
-Il problema di questa soluzione che la rende non ottimale è la concorrenza durante la scrittura sul vettore dei costi, infatti thread con lo stesso threadIdx.x nello stesso blocco
-accederanno in scrittura sulla stessa locazione di memoria dato che dovranno aggiornare lo stesso elemento della funzione obiettivo. Anche blocchi differenti possono accedere alla stessa locazione di memoria in scrittura, causando concorrenza,
- questo accade quando thread di blocchi diversi lavorano sulla stessa riga della matrice, aggiornando di conseguanza lo stesso elemento della funzione obiettivo.
-
-A causa della concorrenza è necessario utilizzare l'operazione di somma atomica per evitare inconsistenze, ma questo porta ad una perdita di efficienza dato che scritture atomiche sulla stessa locazione di memoria vengono serializzate.
-
-A seconda della compute capability della scheda video utilizzata il discorso varia:
-
--Nel caso in cui la scheda grafica disponga di compute capability superiore o uguale alla 6.0 potrebbe essere sufficiente l'approccio naive, con opportuni accorgimenti,
-dato che l'effiecienza delle operazioni atomiche permette di avere risultati paragonabili se non migliori alla migliore soluzione trovata che eviti o limiti l'utilizzo delle operazioni atomiche.
-
--Nel caso in cui la compute capability sia inferiore alla 6.0 non è disponibile l'operazione atomica di somma di double, per tale motivo è necessario utilizzare un implementazione simulata con costi
-non triviali sulle performance, per tale motivo utilizzare l'approccio che limita le atomicadd risulta migliore dell'approccio naive.
-
-### Approccio ragionato
-L'approccio ragionato utilizza l'idea della riduzione per evitare somme atomiche concorrenti permettendo tempi ottimali anche nel caso di compute capability inferiori alla 6.0.
-
-Pensando al problema da risolvere quello che si vuole effettivamente andare a fare è ridurre delle righe opportunamente moltiplicate per un moltiplicatore e sottrarre il risultato di tale riduzione all'elemento della funzione obiettivo corrispondente a tale riga.
-
-La soluzione migliore ottenuta è la seguente:
-
-- Si utilizzano dei blocchi bidimensionali di dimensione (32,k) ed una grid di dimensione (1, roof(righeTrasposta/k))
-- Per come funziona la suddivisione in warp di un blocco si avranno warp di 32 thread consecutivi che lavorano su 32 elementi consecutivi della stessa riga della matrice
-- Ogni thread di un warp carica il proprio elemento della matrice ed il rispettivo moltiplicatore, dato che i thread del warp accedono ad elementi consecutivi della riga della trapsosta si avranno accessi coalescenti sia
-per i dati della matrice sia per i moltiplicatori.
-- Si utilizza una riduzione attraverso le primitive di comunicazione tra thread di un warp, ovvero si utilizza una riduzione intra-warp.
-- Un thread per warp aggiorna la funzione obiettivo nella locazione relativa alla riga su cui ha lavorato.
-- Si utilizza un grid stride per scorrere tutta la riga della matrice
-
-Tale soluzione permette di evitare completamente l'utilizzo delle operazioni di somma atomica.
-
-Un ulteriore ottimizzazione consiste nell'eseguire una somma prima di passare alla riduzione: ogni thread esegue già una somma quando carica il proprio valore della matrice, caricandone due invece che 1.
-
-Rimane un problema di questa soluzione: quando il risultato di una riduzione viene sottratto nella funzione obiettivo si ha una divergenza nel warp, quello che invece sarebbe più efficiente sarebbe
- di fare eseguire l'aggiornamento da un unico warp (invece che tanti quanti l'altezza del blocco) ma qualsiasi soluzione provata aggiunge un overhead superiore al tempo impiegato lasciando l'aggiornamento a warp diversi.
-
-
-
-## Aggiornamento della tabella
 
 # Risultati sperimentali
 
