@@ -55,7 +55,7 @@ __global__ void updateCostsVector(TYPE *costVector, int size, double *colPivot, 
     }
 }
 
-__inline__ void updateTableau(tabular_t *tabular, TYPE *colPivot, int colPivotIndex, TYPE *rowPivot, TYPE minCosts)
+__inline__ void updateTableau(tabular_t *tabular, TYPE *colPivot, int colPivotIndex, TYPE *rowPivot, TYPE minCosts, cudaStream_t* streams)
 {
     matrixInfo matInfo = {tabular->table, tabular->pitch, tabular->rows, tabular->cols};
 
@@ -65,10 +65,6 @@ __inline__ void updateTableau(tabular_t *tabular, TYPE *colPivot, int colPivotIn
     TYPE pivot;
     HANDLE_ERROR(cudaMemcpy(&pivot, rowPivot + colPivotIndex, BYTE_SIZE(1), cudaMemcpyDefault));
 
-    cudaStream_t streams[2];
-    for (size_t i = 0; i < 2; i++)
-        HANDLE_ERROR(cudaStreamCreate(streams + i));
-
     dim3 block(TILE_DIM, TILE_DIM);
     dim3 grid(BLOCK_DIM(tabular->cols), BLOCK_DIM(tabular->rows));
     updateContraintsMatrix<<<grid, block, 0, streams[0]>>>(matInfo, colPivot, rowPivot, colPivotIndex, pivot);
@@ -76,13 +72,10 @@ __inline__ void updateTableau(tabular_t *tabular, TYPE *colPivot, int colPivotIn
     updateCostsVector<<<BL(tabular->rows), THREADS, 0, streams[1]>>>(tabular->costsVector, tabular->rows, colPivot, minCosts, pivot);
 
     HANDLE_KERNEL_ERROR();
-
-    for (size_t i = 0; i < 2; i++)
-        HANDLE_ERROR(cudaStreamDestroy(streams[i]));
 }
 
 #define NOT_ENDED -10
-__inline__ int solve(tabular_t *tabular, int *base, TYPE *rowPivot, TYPE *colPivot)
+__inline__ int solve(tabular_t *tabular, int *base, TYPE *rowPivot, TYPE *colPivot, cudaStream_t* streams)
 {
     unsigned int colPivotIndex;
     unsigned int rowPivotIndex;
@@ -111,7 +104,7 @@ __inline__ int solve(tabular_t *tabular, int *base, TYPE *rowPivot, TYPE *colPiv
         minElement(tabular->knownTermsVector, rowPivot, tabular->cols, &colPivotIndex);
         base[colPivotIndex] = rowPivotIndex;
 
-        updateTableau(tabular, colPivot, colPivotIndex, rowPivot, minCosts);
+        updateTableau(tabular, colPivot, colPivotIndex, rowPivot, minCosts, streams);
 
 #ifdef TIMER
         stop();
@@ -138,12 +131,19 @@ int solve(tabular_t *tabular, int *base)
     HANDLE_ERROR(cudaMalloc((void **)&rowPivot, BYTE_SIZE(tabular->cols)));
     HANDLE_ERROR(cudaMalloc((void **)&colPivot, BYTE_SIZE(tabular->rows)));
 
+    cudaStream_t streams[2];
+    for (size_t i = 0; i < 2; i++)
+        HANDLE_ERROR(cudaStreamCreate(streams + i));
+
     int status = FEASIBLE;
-    while ((status = solve(tabular, base, rowPivot, colPivot)) == NOT_ENDED)
+    while ((status = solve(tabular, base, rowPivot, colPivot, streams)) == NOT_ENDED)
         ;
 
     HANDLE_ERROR(cudaFree(rowPivot));
     HANDLE_ERROR(cudaFree(colPivot));
+
+    for (size_t i = 0; i < 2; i++)
+        HANDLE_ERROR(cudaStreamDestroy(streams[i]));
 
     return status;
 }
