@@ -312,7 +312,28 @@ Per fare ciò si effettuano una serie di eliminazioni di Gauss sottraendo al vet
 
 Per fare questa operazione sono stati provati due approcci:
 
-- 
+- un approccio "naive" che sfrutta le aomicAdd native e che funziona banalmente lasciando ad ogni thread del tile il caricamento, moltiplicazione ed aggiornamento nella funzione obiettivo
+
+- un approccio più ragionato che sfrutta la riduzione, dove l'aggiornamento della funzione obiettivo viene fatta solo da un sottoinsieme di kernel sfruttando a tal fine la riduzione intra warp
+
+Il motivo per sono state pensate due soluzioni è dovuto al fatto che le somme atomiche per i double sono disponibili solo a partire dalla compute capability 6.0, il che richiede di implementare manualmente le somme atomiche attraverso l'operazione atomica CAS se si vuole garantire il funzionamento del kernel anche per schede video con C.C. inferiore alla 6.0.
+
+Nella seguente tabella sono riportati i tempi ottenuti per i due kernel (con configurazione di lancio ottimale ed ottimizzazioni implementate).
+
+
+| Naive (cc < 6.0) | Riduzione (cc < 6.0) | Naive (cc > 6.0) | Riduzione (cc > 6.0) |
+|:----------------:|:--------------------:|:----------------:|:--------------------:|
+|     209.23ms     |       52.142ms       |     38.720ms     |       50.610ms       |
+
+Table: Risultati sperimentali dei diversi kernel, con la configurazione di lancio ottimale (blocco: 32*32, grid: (1, roof(24.588/32))) ed ottenuti con una scheda mx250.
+
+IL risultato peggiore ottenuto risulta essere quello con l'approccio naive e con cc < 6.0, che impiega circa quattro volte tanto gli altri casi. Per tale motivo in tale situazione conviene utilizzare l'approccio con riduzione.
+
+Nel caso di cc >= 6.0 la situazione è diversa e quello più efficiente risulta essere quello che sfrutta l'approccio naive, grazie all'ottimizzazione dell'atomicAdd
+
+A partire da queste considerazioni si è deciso di sfruttare l'approccio naive mantenendo quello ragionato solamente nel caso il programma venga compilato per essere utilizzato su schede video con cc < 6.0
+
+In ogni caso nella pratica il tempo necessario per svolgere l'eliminazione di gauss è trascurabile, anche nel caso peggiore (naive, cc<6.0 e privo di ottimizzazioni che impiega un tempo dell'ordine delle decine di secondi con gpu mx250), come si vedrà durante la discussione dei risultati sperimentali.
 
 ### Verifica di degenerazione (Algoritmo \ref{alg:simplex-phase1}, riga 26)
 Per verificare se il problema è degenere si scandisce il vettore della base e si verifica se l'elemento in questione sia compreso tra $n+m$ e $n+2m$ (non compreso). Se sì, si incrementa di 1 (con *atomicAdd*) un contatore in global memory e una volta terminata la scansione si controlla se il valore di questo contatore sia maggiore di 0.
