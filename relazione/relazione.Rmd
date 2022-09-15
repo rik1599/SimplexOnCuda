@@ -367,200 +367,363 @@ Come già discusso nel paragrafo \ref{par:complessita} sulla complessità del si
 
 Tutte le misurazioni vengono salvate su file csv per essere analizzate utilizzando il software R.
 
-### Tempo per il solve
+### Occupazione ciclo di solve
+Come accennato durante la spiegazione degli approcci utilizzati per la parallelizzazione dell'algoritmo il collo di bottiglia dell'algoritmo risulta essere il **ciclo di solve** come mostrato dal seguente grafico.
+
+
 ```{r, echo=FALSE, warning=FALSE}
-
-mx250_256 <- read.csv("./../data/measures/mx250/mx250_256.txt")
-mx250_512 <- read.csv("./../data/measures/mx250/mx250_512.txt")
-mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
-mx250_2048 <- read.csv("./../data/measures/mx250/mx250_2048.txt")
-mx250_4096 <- read.csv("./../data/measures/mx250/mx250_4096.txt")
-mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
-
-##256x256##
-
+##costruzione dataframes
 mantenere <- c("operation","elapsed_time")
-data_mx250_256 <- subset(mx250_256, select = mantenere)
-data_mx250_256["operation"][data_mx250_256["operation"] == "gauss1" | data_mx250_256["operation"] == "gauss2"] <- "gauss"
-data_mx250_256 <- aggregate(data_mx250_256$elapsed_time, by=list(Category=data_mx250_256$operation),FUN=sum)
+sequence <- c(256, 512, 1024, 2048, 4096, 8192)
+mx250.solvePercentage <- c(); ##aggiungere qui per altre schede
 
-transposed_data_mx250_256 <- t(data_mx250_256)
-varNames <- transposed_data_mx250_256[1,]
-colnames(transposed_data_mx250_256) <- transposed_data_mx250_256[1,]
-transposed_data_mx250_256 <- transposed_data_mx250_256[-c(1),]
-transposed_data_mx250_256 <-
-as.numeric(transposed_data_mx250_256)
-##512x512##
+for(var in sequence){
+  ####mx 250####
+    temp <- format(var)
+    fileLocation <- "./../data/measures/mx250_2/"    #sostituire con locazione desiderata
+    filename <- paste(fileLocation, "benchmark_", temp, "_", temp, ".txt", sep = "")
+    
+    #lettura file
+    currentData <- read.csv(filename)
+    
+    #elaborazione file
+    currentData <- subset(currentData, select = mantenere)
+    currentData["operation"][currentData["operation"] == "gauss1" | currentData["operation"] == "gauss2"] <- "gauss"
+    currentData <- aggregate(currentData$elapsed_time, by=list(Category=currentData$operation),FUN=sum)
+    
+    #calcolo percentuale
+    totalTime <- sum(currentData$x)
+    currentData$percentage <- (currentData$x / totalTime) * 100
+    
+    row <-  subset(currentData, Category == "solve")
+    
+    #salvataggio valore
+    mx250.solvePercentage <- c(mx250.solvePercentage,  row$percentage)
+}
 
-data_mx250_512 <- subset(mx250_512, select = mantenere)
-data_mx250_512["operation"][data_mx250_512["operation"] == "gauss1" | data_mx250_512["operation"] == "gauss2"] <- "gauss"
-data_mx250_512 <- aggregate(data_mx250_512$elapsed_time, by=list(Category=data_mx250_512$operation),FUN=sum)
+edge <- sequence;
+m250.percentage <- data.frame(edge, mx250.solvePercentage);
 
-transposed_data_mx250_512 <- t(data_mx250_512)
-colnames(transposed_data_mx250_512) <- transposed_data_mx250_512[1,]
-transposed_data_mx250_512 <- transposed_data_mx250_512[-c(1),]
-transposed_data_mx250_512 <-
-as.numeric(transposed_data_mx250_512)
-
-##1024x1024##
-
-data_mx250_1024 <- subset(mx250_1024, select = mantenere)
-data_mx250_1024["operation"][data_mx250_1024["operation"] == "gauss1" | data_mx250_1024["operation"] == "gauss2"] <- "gauss"
-data_mx250_1024 <- aggregate(data_mx250_1024$elapsed_time, by=list(Category=data_mx250_1024$operation),FUN=sum)
-
-transposed_data_mx250_1024 <- t(data_mx250_1024)
-colnames(transposed_data_mx250_1024) <- transposed_data_mx250_1024[1,]
-transposed_data_mx250_1024 <- transposed_data_mx250_1024[-c(1),]
-transposed_data_mx250_1024 <-
-as.numeric(transposed_data_mx250_1024)
-
-##2048x2048##
-
-data_mx250_2048 <- subset(mx250_2048, select = mantenere)
-data_mx250_2048["operation"][data_mx250_2048["operation"] == "gauss1" | data_mx250_2048["operation"] == "gauss2"] <- "gauss"
-data_mx250_2048 <- aggregate(data_mx250_2048$elapsed_time, by=list(Category=data_mx250_2048$operation),FUN=sum)
-
-transposed_data_mx250_2048 <- t(data_mx250_2048)
-colnames(transposed_data_mx250_2048) <- transposed_data_mx250_2048[1,]
-transposed_data_mx250_2048 <- transposed_data_mx250_2048[-c(1),]
-transposed_data_mx250_2048 <-
-as.numeric(transposed_data_mx250_2048)
-
-##4096x4096##
-
-data_mx250_4096 <- subset(mx250_4096, select = mantenere)
-data_mx250_4096["operation"][data_mx250_4096["operation"] == "gauss1" | data_mx250_4096["operation"] == "gauss2"] <- "gauss"
-data_mx250_4096 <- aggregate(data_mx250_4096$elapsed_time, by=list(Category=data_mx250_4096$operation),FUN=sum)
-
-transposed_data_mx250_4096 <- t(data_mx250_4096)
-colnames(transposed_data_mx250_4096) <- transposed_data_mx250_4096[1,]
-transposed_data_mx250_4096 <- transposed_data_mx250_4096[-c(1),]
-transposed_data_mx250_4096 <-
-as.numeric(transposed_data_mx250_4096)
-
-#data_mx250_4096$edge <- c(rep(4096, 6))
-
-##8192x8192##
-
-data_mx250_8192 <- subset(mx250_8192, select = mantenere)
-data_mx250_8192["operation"][data_mx250_8192["operation"] == "gauss1" | data_mx250_8192["operation"] == "gauss2"] <- "gauss"
-data_mx250_8192 <- aggregate(data_mx250_8192$elapsed_time, by=list(Category=data_mx250_8192$operation),FUN=sum)
-
-transposed_data_mx250_8192 <- t(data_mx250_8192)
-colnames(transposed_data_mx250_8192) <- transposed_data_mx250_8192[1,]
-transposed_data_mx250_8192 <- transposed_data_mx250_8192[-c(1),]
-transposed_data_mx250_8192 <- as.numeric(transposed_data_mx250_8192)
-
-######## proviamo a fare il grafico della percentuale di tempo utilizzata dal solve #####
-total <- rbind(transposed_data_mx250_256, transposed_data_mx250_512)
-total <- rbind(total, transposed_data_mx250_1024)
-total <- rbind(total, transposed_data_mx250_2048)
-total <- rbind(total, transposed_data_mx250_4096)
-total <- rbind(total, transposed_data_mx250_8192)
-totalDF <- as.data.frame(total)
-
-colnames(totalDF) <- varNames
-
-
-totalDF <- (totalDF/rowSums(totalDF))*100
-mantenere2 <- c("solve")
-totalDF <- subset(totalDF, select = mantenere2)
-totalDF$edge <- c("256", "512", "1024", "2048", "4096", "8192")
-
-plot(data = totalDF, solve~edge, main = "Percentuale di tempo occupata dal ciclo di solve", type = 'b', xlab = "Dimensione lato matrice", ylab = "Percentuale tempo in solve")
+plot(data = m250.percentage, mx250.solvePercentage~edge, main = "Percentuale di tempo occupata dal ciclo di solve", type = 'b', xlab = "Dimensione lato matrice", ylab = "Percentuale tempo in solve")
 ```
 Come possibile notare dal grafico, per l'esecuzione delle istanze di benchmarking si ha un tempo speso nella esecuzione del ciclo di solving superiore al 99% del tempo totale già per matrici di dimensione 256x256, per cui ad una riduzione della durata di una singola iterazione di tale ciclo corrisponde una riduzione nel tempo di esecuzione e rispettiva risoluzione del problema di partenza.
-Di seguito si nota come il tempo medio per una singola esecuzione del ciclo varia al variare della dimensione della matrice.
 
+### Analisi in funzione della dimensione del problema
+Dato che il tempo richiesto dall'algorirmo dipende quasi esclusivamente dal tempo totale del ***ciclo di solve*** il centro dell'attenzione in questa analisi viene posto proprio sul tempo medio richiesto per un singolo singolo ciclo.
+
+La durata del ciclo dipenderà chiaramente dalla dimensione del problema, che a sua volta dipende da: il numero di variabili ed il numero di vincoli.
+
+Il tempo medio richiesto da un singolo ciclo di solve non cresce nello stesso modo all'aumentare delle due dimensioni, come possibile notare dai seguenti grafici tridimensionali:
+
+```{r, echo=FALSE, warning=FALSE}
+library(plot3D)
+
+#preparazione dataframes
+vars <- c()
+constraints <- c()
+solvePhaseOne.mean <- c()
+solvePhaseOne.total <- c()
+solvePhaseTwo.mean <- c()
+solvePhaseTwo.total <- c()
+
+values <- c(256, 512, 1024, 2048, 4096, 8192)
+for(var in values){               ##usiamo un for per caricarli tutti
+  
+  for(constraint in values){
+    
+    vars <- c(vars, var)
+    constraints <- c(constraints, constraint)
+    
+    ##composizione nome file
+    temp1 <- format(var)
+    temp2 <- format(constraint)
+    fileLocation <- "./../data/measures/mx250_2/"    #sostituire con locazione desiderata
+    filename <- paste(fileLocation, "benchmark_", temp1, "_", temp2, ".txt", sep = "")
+    
+    ##lettura file
+    currentData <- read.csv(filename)
+    
+    ##isoliamo il tempo di solve per le diverse fasi
+     #fase 1
+    variables <- (var + 2*constraint) + 1
+    tempData <- subset(currentData, vars == format(variables) & operation == "solve" )
+    solvePhaseOne.mean <- c(solvePhaseOne.mean, mean(tempData$elapsed_time))
+    solvePhaseOne.total <- c(solvePhaseOne.total, sum(tempData$elapsed_time))
+    
+     #fase 2
+    variables <- (var + constraint) + 1
+    tempData <- subset(currentData, vars == format(variables) & operation == "solve" )
+    solvePhaseTwo.mean <- c(solvePhaseTwo.mean, mean(tempData$elapsed_time))
+    solvePhaseTwo.total <- c(solvePhaseTwo.total, sum(tempData$elapsed_time))
+     }
+}
+
+names <- c("vars", "constraints", "values")
+
+phaseOneFrame.mean<- data.frame(vars, constraints, solvePhaseOne.mean);
+phaseOneFrame.total<- data.frame(vars, constraints, solvePhaseOne.total);
+phaseTwoFrame.mean<- data.frame(vars, constraints, solvePhaseTwo.mean);
+phaseTwoFrame.total<- data.frame(vars, constraints, solvePhaseTwo.total);
+
+colnames(phaseOneFrame.mean) <- names; 
+colnames(phaseOneFrame.total) <- names;
+colnames(phaseTwoFrame.mean) <- names;
+colnames(phaseTwoFrame.total) <- names;
+##dataframe pronti
+
+#fittiamo un modello, opzionale eventualmente eliminare
+phaseOneFrame.mean.lm <- lm(values ~ constraints + vars + 1, data = phaseOneFrame.mean)
+phaseOneFrame.total.lm <- lm(values ~ constraints + vars + 1, data = phaseOneFrame.total)
+phaseTwoFrame.mean.lm <- lm(values ~ constraints + vars + 1, data = phaseTwoFrame.mean)
+phaseTwoFrame.total.lm <- lm(values ~ constraints + vars + 1, data = phaseTwoFrame.total)
+
+##grafici 3d
+
+  ## tempo medio per il ciclo di solve
+  par(mfrow=c(1,2))
+  scatter3D(phaseOneFrame.mean$vars, phaseOneFrame.mean$constraints, phaseOneFrame.mean$values,
+            theta = -35, phi = 5, bty = "g",  type = "h",
+            pch = 19,
+            zlim = c(0, max(solvePhaseOne.mean)),
+            surface = TRUE, fill=TRUE, grid=TRUE, grid.lines=26,
+            xlab = "variabili", ylab = "vincoli", zlab = "tempo", main = "Fase 1")
+  scatter3D(phaseTwoFrame.mean$vars, phaseTwoFrame.mean$constraints, phaseTwoFrame.mean$values,
+            theta = -35, phi = 5, bty = "g",  type = "h",
+            pch = 19,
+            zlim = c(0, max(solvePhaseOne.mean)),
+            surface = TRUE, fill=TRUE, grid=TRUE, grid.lines=26,
+            xlab = "variabili", ylab = "vincoli", zlab = "tempo", main = "Fase 2")
+  par(mfrow=c(1,1))
+
+```
+
+La differenza nella variazione risulta essere più chiara se si fissa una delle due dimensioni e si analizza il tempo medio per ***ciclo di solve*** al variare dell'altra.
+
+```{r, echo=FALSE, warning=FALSE}
+
+  fixedValue = 4096
+
+  phaseOneMean_FixVars <- subset(phaseOneFrame.mean, vars == fixedValue)
+  phaseTwoMean_FixVars <- subset(phaseTwoFrame.mean, vars == fixedValue)
+  phaseOneMean_FixConstraints <- subset(phaseOneFrame.mean, constraints == fixedValue)
+  phaseTwoMean_FixConstraints <- subset(phaseTwoFrame.mean, constraints == fixedValue)
+  
+  par(mfrow=c(2,2))
+  
+  plot(data = phaseOneMean_FixVars, values~constraints, type = 'b', main = paste("Fase 1, Vars: ",fixedValue))
+  plot(data = phaseTwoMean_FixVars, values~constraints, type = 'b', main = paste("Fase 2, Constraints: ",fixedValue))
+  plot(data = phaseOneMean_FixConstraints, values~vars, type = 'b', main = paste("Fase 1, Vars: ",fixedValue))
+  plot(data = phaseTwoMean_FixConstraints, values~vars, type = 'b', main = paste("Fase 2, Constraints: ",fixedValue))
+  
+  par(mfrow=c(1,1))
+ 
+```
+
+La spiegazione di questa caratteristica è da ricercarsi nel funzionamento pratico dell'algoritmo l'algoritmo: durante il ***ciclo di solve*** un passo fondamentale dell'algoritmo è l'aggiornamento del tableu, tale tableu non ha una dimensione pari a "N.Variabili * N.Vincoli", bensì pari a "(N.Variabili + 2 * N.Vincoli) * N.Vincoli" nel caso della fase 1, mentre "(N.Variabili + N.Vincoli) * N.Vincoli" nel caso della fase 2.
+
+Si ha di conseguenza un incremento quadratico nel numero di aggiornamenti da fare all'aumentare dei vincoli ma solo lineare all'aumentare delle variabili.
+
+Un ulteriore grafico interessante che mette ancora di più in evidenza questa caratteristica è quello che mette in relazione il tempo medio per ciclo di solve alla dimensione del problema, quest'ultima calcolata come "N.Variabili * N.Vincoli". 
+
+```{r, echo=FALSE, warning=FALSE}
+
+  phaseOneMean_ElemNumber <- phaseOneFrame.mean
+  phaseTwoMean_ElemNumber <- phaseTwoFrame.mean
+
+  
+  phaseOneMean_ElemNumber$cells <- phaseOneMean_ElemNumber$constraints * phaseOneMean_ElemNumber$vars
+  phaseTwoMean_ElemNumber$cells <- phaseTwoMean_ElemNumber$constraints * phaseTwoMean_ElemNumber$vars
+  
+  par(mfrow=c(1,2))
+  
+  plot(data = phaseOneMean_ElemNumber, values~cells, main = "Fase 1")
+  plot(data = phaseTwoMean_ElemNumber, values~cells, main = "Fase 2")
+  
+  par(mfrow=c(1,1))
+ 
+```
+
+Dal grafico è possibile notare come a stessa dimensione corrispondono tempi medi molto diversi tra di loro, confermando di fatto che il tempo necessario per un singolo ciclo di solve scala diversamente per le due dimensioni, dato che se così non fosse non si dovrebbero notare eccessive differenze di tempo medio a parità di dimensione del problema.
+
+
+### Analisi in funzione della dimensione reale
+
+Partendo dalle considerazioni effettuate precedentemente è possibile procedere ad analizzare il tempo medio per ciclo di solve in base alla dimensione del tableu utilizzato per la risoluzione.
+
+```{r, echo=FALSE, warning=FALSE}
+
+library(plot3D)
+
+#preparazione dataframes
+vars <- c()
+trueVarsPhaseOne <- c()
+trueVarsPhaseTwo <- c()
+constraints <- c()
+solvePhaseOne.mean <- c()
+solvePhaseOne.total <- c()
+solvePhaseTwo.mean <- c()
+solvePhaseTwo.total <- c()
+
+values <- c(256, 512, 1024, 2048, 4096, 8192)
+for(var in values){               ##usiamo un for per caricarli tutti
+  for(constraint in values){
+    
+    constraints <- c(constraints, constraint)
+    vars <- c(vars, var)
+    ##composizione nome file
+    temp1 <- format(var)
+    temp2 <- format(constraint)
+    fileLocation <- "./../data/measures/mx250_2/"    #sostituire con locazione desiderata
+    filename <- paste(fileLocation, "benchmark_", temp1, "_", temp2, ".txt", sep = "")
+    
+    ##lettura file
+    currentData <- read.csv(filename)
+    
+    ##isoliamo il tempo di solve per le diverse fasi
+     #fase 1
+    variables <- (var + 2*constraint) + 1
+    trueVarsPhaseOne <- c(trueVarsPhaseOne, variables)
+    tempData <- subset(currentData, vars == format(variables) & operation == "solve" )
+    solvePhaseOne.mean <- c(solvePhaseOne.mean, mean(tempData$elapsed_time))
+    solvePhaseOne.total <- c(solvePhaseOne.total, sum(tempData$elapsed_time))
+    
+     #fase 2
+    variables <- (var + constraint) + 1
+    trueVarsPhaseTwo <- c(trueVarsPhaseTwo, variables)
+    tempData <- subset(currentData, vars == format(variables) & operation == "solve" )
+    solvePhaseTwo.mean <- c(solvePhaseTwo.mean, mean(tempData$elapsed_time))
+    solvePhaseTwo.total <- c(solvePhaseTwo.total, sum(tempData$elapsed_time))
+     }
+}
+
+names <- c("vars", "constraints", "trueVars", "values")
+
+phaseOneFrame.mean<- data.frame(vars, constraints, trueVarsPhaseOne, solvePhaseOne.mean);
+phaseOneFrame.total<- data.frame(vars, constraints, trueVarsPhaseOne, solvePhaseOne.total);
+phaseTwoFrame.mean<- data.frame(vars, constraints, trueVarsPhaseTwo, solvePhaseTwo.mean);
+phaseTwoFrame.total<- data.frame(vars, constraints, trueVarsPhaseTwo, solvePhaseTwo.total);
+
+colnames(phaseOneFrame.mean) <- names; 
+colnames(phaseOneFrame.total) <- names;
+colnames(phaseTwoFrame.mean) <- names;
+colnames(phaseTwoFrame.total) <- names;
+##dataframe pronti
+
+#fittiamo un modello, opzionale eventualmente eliminare, non utilizzate per ora
+phaseOneFrame.mean.lm <- lm(values ~ constraints + vars + 1, data = phaseOneFrame.mean)
+phaseOneFrame.total.lm <- lm(values ~ constraints + vars + 1, data = phaseOneFrame.total)
+phaseTwoFrame.mean.lm <- lm(values ~ constraints + vars + 1, data = phaseTwoFrame.mean)
+phaseTwoFrame.total.lm <- lm(values ~ constraints + vars + 1, data = phaseTwoFrame.total)
+
+##grafici 3d
+  ## tempo medio per il ciclo di solve
+  par(mfrow=c(1,2))
+  scatter3D(phaseOneFrame.mean$trueVars, phaseOneFrame.mean$constraints, phaseOneFrame.mean$values,
+            theta = -35, phi = 5, bty = "g",  type = "h",
+            pch = 19,
+            zlim = c(0, max(solvePhaseOne.mean)),
+            surface = TRUE, fill=TRUE, grid=TRUE, grid.lines=26,
+            xlab = "variabili totali", ylab = "vincoli", zlab = "tempo", main = "Fase 1")
+  scatter3D(phaseTwoFrame.mean$trueVars, phaseTwoFrame.mean$constraints, phaseTwoFrame.mean$values,
+            theta = -35, phi = 5, bty = "g",  type = "h",
+            pch = 19,
+            zlim = c(0, max(solvePhaseOne.mean)),
+            surface = TRUE, fill=TRUE, grid=TRUE, grid.lines=26,
+            xlab = "variabili totali", ylab = "vincoli", zlab = "tempo", main = "Fase 2")
+  par(mfrow=c(1,1))
+
+```
+
+Se si mette in relazione il tempo medio per ***ciclo di solve*** con il numero di celle totali si ottengono i seguenti grafici
+
+```{r, echo=FALSE, warning=FALSE}
+
+  phaseOneMean_ElemNumber <- phaseOneFrame.mean
+  phaseTwoMean_ElemNumber <- phaseTwoFrame.mean
+
+  phaseOneMean_ElemNumber$cells <- phaseOneMean_ElemNumber$constraints * phaseOneMean_ElemNumber$trueVars
+  phaseTwoMean_ElemNumber$cells <- phaseTwoMean_ElemNumber$constraints * phaseTwoMean_ElemNumber$trueVars
+  
+  linearModelPhaseOne <- lm(data = phaseOneMean_ElemNumber, values~cells)
+  linearModelPhaseTwo <- lm(data = phaseTwoMean_ElemNumber, values~cells)
+  
+  par(mfrow=c(1,2))
+  plot(data = phaseOneMean_ElemNumber, values~cells, main = "Fase 1")
+  abline(linearModelPhaseOne, col = "green")
+  plot(data = phaseTwoMean_ElemNumber, values~cells, main = "Fase 2")
+  abline(linearModelPhaseTwo, col = "green")
+  par(mfrow=c(1,1))
+```
+
+Si nota come il tempo medio necessario per ciclo di solve sembra crescere linearmente all'aumentare della dimensione effettiva del tableu.
+
+### Confronti tra diverse gpu
+Questa sezione si concentra nell'analizzare le prestazioni ottenute con diverse gpu e la conseguente scalabilità delle performance in base alle prestazioni del dispostivo utilizzato
 
 ```{r, echo=FALSE}
 mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
 mx250_2048 <- read.csv("./../data/measures/mx250/mx250_2048.txt")
 mx250_4096 <- read.csv("./../data/measures/mx250/mx250_4096.txt")
 mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
-
 rtx3070_1024 <- read.csv("./../data/measures/rtx3070/rtx3070_1024.txt")
 rtx3070_2048 <- read.csv("./../data/measures/rtx3070/rtx3070_2048.txt")
 rtx3070_4096 <- read.csv("./../data/measures/rtx3070/rtx3070_4096.txt")
 rtx3070_8192 <- read.csv("./../data/measures/rtx3070/rtx3070_8192.txt")
-
 times_mx250_1024 <- subset(mx250_1024, vars == "3073" & operation == "solve")
 times_mx250_2048 <- subset(mx250_2048, vars == "6145" & operation == "solve")
 times_mx250_4096 <- subset(mx250_4096, vars == "12289" & operation == "solve")
 times_mx250_8192 <- subset(mx250_8192, vars == "24577" & operation == "solve")
-
 times_rtx3070_1024 <- subset(rtx3070_1024, vars == "3073" & operation == "solve")
 times_rtx3070_2048 <- subset(rtx3070_2048, vars == "6145" & operation == "solve")
 times_rtx3070_4096 <- subset(rtx3070_4096, vars == "12289" & operation == "solve")
 times_rtx3070_8192 <- subset(rtx3070_8192, vars == "24577" & operation == "solve")
-
 ############ 1024 ##########
-
 dta_A <- mean(times_mx250_1024$elapsed_time)
 dta_B <- mean(times_rtx3070_1024$elapsed_time)
-
 mx250_Data <- dta_A
 rtx3070_Data <- dta_B
-
 ############ 2048 ##########
-
 dta_A <- mean(times_mx250_2048$elapsed_time)
 dta_B <- mean(times_rtx3070_2048$elapsed_time)
-
 mx250_Data <- c(mx250_Data, dta_A)
 rtx3070_Data <- c(rtx3070_Data, dta_B)
-
 ############ 4096 ##########
-
 dta_A <- mean(times_mx250_4096$elapsed_time)
 dta_B <- mean(times_rtx3070_4096$elapsed_time)
-
 mx250_Data <- c(mx250_Data, dta_A)
 rtx3070_Data <- c(rtx3070_Data, dta_B)
-
 ########### 8192 ###########
-
 dta_A <- mean(times_mx250_8192$elapsed_time)
 dta_B <- mean(times_rtx3070_8192$elapsed_time)
-
 mx250_Data <- c(mx250_Data, dta_A)
 rtx3070_Data <- c(rtx3070_Data, dta_B)
-
 #### preparazione dataframes ####
 edge <- c(1024,2048,4096,8192)
-
 mx250_Data <- data.frame(mx250_Data, edge)
 rtx3070_Data <- data.frame(rtx3070_Data, edge)
-
 colnames(mx250_Data) <- c("time", "edge")
 colnames(rtx3070_Data) <- c("time", "edge")
-
 plot(data = mx250_Data, time~edge, main = "Tempo per singolo ciclo di solve", type = 'b', xlab = "Dimensione lato matrice", ylab = "Tempo per ciclo", col = "black")
 lines(data = rtx3070_Data, time~edge, type = 'b', col = "green")
 legend("topleft", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
 ```
-Si può notare come il tempo per singolo ciclo cresce non linearmente all'aumentare della dimensione del problema, come possibile intuire dall'introduzione teorica all'algoritmo, inoltre all'aumentare della dimensione del problema si nota come anche la differenza di tempo necessario per l'esecuzione del ciclo tra schede video con diverse prestazioni tende ad aumentare.
+Si può notare come all'aumentare della dimensione del problema la differenza di tempo necessario per l'esecuzione del ciclo tra schede video con diverse prestazioni tende ad aumentare.
 
 ```{r, echo=FALSE}
 mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
 mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
-
 rtx3070_1024 <- read.csv("./../data/measures/rtx3070/rtx3070_1024.txt")
 rtx3070_8192 <- read.csv("./../data/measures/rtx3070/rtx3070_8192.txt")
-  
+
 mx250_1024 <- subset(mx250_1024, vars == "3073" & operation == "solve")
 mx250_8192 <- subset(mx250_8192, vars == "24577" & operation == "solve")
-
 rtx3070_1024 <- subset(rtx3070_1024, vars == "3073" & operation == "solve")
-
 rtx3070_8192 <- subset(rtx3070_8192, vars == "24577" & operation == "solve")
-  
+
 difference_1024 <- mean(mx250_1024$elapsed_time)-mean(rtx3070_1024$elapsed_time)
-difference_8192 <- mean(mx250_8192$elapsed_time)-mean(rtx3070_8192$elapsed_time) 
-
-rapporto_1024 <- mean(mx250_1024$elapsed_time)/mean(rtx3070_1024$elapsed_time) 
+difference_8192 <- mean(mx250_8192$elapsed_time)-mean(rtx3070_8192$elapsed_time)
+rapporto_1024 <- mean(mx250_1024$elapsed_time)/mean(rtx3070_1024$elapsed_time)
 rapporto_8192 <- mean(mx250_8192$elapsed_time)/mean(rtx3070_8192$elapsed_time)
-
 ```
 Infatti per problemi di dimensione 1024x1024 si ha che una rtx3070 risulta utilizzare in media `r round(difference_1024/1000, digits = 2)`ms in meno della mx250, differenza che raggiunge i `r round(difference_8192/1000, digits=2)`ms nel caso di un problema di dimensione 8192x8192. La maggiore efficienza della rtx 3070 passa da `r round(rapporto_1024, digits = 1)`x rispetto alla mx 250 per un problema 1024x1024 a `r round(rapporto_8192, digits = 1)`x nel caso di un problema 8192x8192.
 
@@ -569,59 +732,42 @@ mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
 mx250_2048 <- read.csv("./../data/measures/mx250/mx250_2048.txt")
 mx250_4096 <- read.csv("./../data/measures/mx250/mx250_4096.txt")
 mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
-
 rtx3070_1024 <- read.csv("./../data/measures/rtx3070/rtx3070_1024.txt")
 rtx3070_2048 <- read.csv("./../data/measures/rtx3070/rtx3070_2048.txt")
 rtx3070_4096 <- read.csv("./../data/measures/rtx3070/rtx3070_4096.txt")
 rtx3070_8192 <- read.csv("./../data/measures/rtx3070/rtx3070_8192.txt")
-
 times_mx250_1024 <- subset(mx250_1024, vars == "3073" & operation == "solve")
 times_mx250_2048 <- subset(mx250_2048, vars == "6145" & operation == "solve")
 times_mx250_4096 <- subset(mx250_4096, vars == "12289" & operation == "solve")
 times_mx250_8192 <- subset(mx250_8192, vars == "24577" & operation == "solve")
-
 times_rtx3070_1024 <- subset(rtx3070_1024, vars == "3073" & operation == "solve")
 times_rtx3070_2048 <- subset(rtx3070_2048, vars == "6145" & operation == "solve")
 times_rtx3070_4096 <- subset(rtx3070_4096, vars == "12289" & operation == "solve")
 times_rtx3070_8192 <- subset(rtx3070_8192, vars == "24577" & operation == "solve")
-
 par(mfrow=c(2,2))
-
 ############ 1024 ##########
-
 dta_A <- density(times_mx250_1024$elapsed_time, na.rm = TRUE)
 dta_B <- density(times_rtx3070_1024$elapsed_time, na.rm = TRUE)
-
 plot(dta_A, col = "black", main = "Matrice 1024x1024", xlim = c(0,6000), ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
 legend("topright", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
-
 ############ 2048 ##########
-
 dta_A <- density(times_mx250_2048$elapsed_time, na.rm = TRUE)
 dta_B <- density(times_rtx3070_2048$elapsed_time, na.rm = TRUE)
-
 plot(dta_A, col = "black", main = "Matrice 2048x2048", ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
 legend("topright", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
-
 ############ 4096 ##########
-
 dta_A <- density(times_mx250_4096$elapsed_time, na.rm = TRUE)
 dta_B <- density(times_rtx3070_4096$elapsed_time, na.rm = TRUE)
-
 plot(dta_A, col = "black", main = "Matrice 4096x4096", ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
 legend("topright", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
-
 ########### 8192 ###########
-
 dta_A <- density(times_mx250_8192$elapsed_time, na.rm = TRUE)
 dta_B <- density(times_rtx3070_8192$elapsed_time, na.rm = TRUE)
-
 plot(dta_A, col = "black", main = "Matrice 8192x8192", ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
 legend("topright", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
-
 par(mfrow=c(1,1))
 ```
