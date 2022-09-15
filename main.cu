@@ -46,6 +46,9 @@ int main(int argc, const char *argv[])
         fclose(file);
     }else if (strcmp(argv[1], "-t") == 0)
     {
+        #ifdef TIMER
+            enableBenchmarkMode();
+        #endif
         fprintf(stderr, "Running a benchmark (max 8192*8192)... \n\n\n");
         int constraints = 256;
         time_t start =  time(NULL);
@@ -54,7 +57,8 @@ int main(int argc, const char *argv[])
             int vars = 256;
             while(vars <= 8192){
                 fprintf(stdout, "\nCurrent matrix: %d*%d\n\n", vars, constraints);
-                problem_t *benchmarkProblem = generateRandomProblem(vars, constraints, vars*100+constraints , +1, +100);
+                int seed = vars*100+constraints + (vars == 1024 && constraints == 8192 ? 1 : 0);
+                problem_t *benchmarkProblem = generateRandomProblem(vars, constraints, seed, +1, +100);
                 TYPE *solution = (TYPE *)(malloc(BYTE_SIZE(benchmarkProblem->vars)));
                 TYPE optimalValue = 0;
                 twoPhaseMethod(benchmarkProblem, solution, &optimalValue);

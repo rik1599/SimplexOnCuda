@@ -9,6 +9,17 @@
 #define THREADS 512
 #define BL(N) min((N + THREADS - 1) / THREADS, 1024)
 
+#ifdef TIMER
+    bool benchmark = false;
+    void enableBenchmarkMode(){
+        benchmark = true;
+    }
+
+    void disableBenchmarkMode(){
+        benchmark = false;
+    }
+#endif
+
 /** Inserisce due matrici di indentità in coda a una matrice
  *  Si suppone sia linearizzata per colonne (non penso sia possibile generalizzare)
  *
@@ -387,7 +398,11 @@ int twoPhaseMethod(problem_t *problem, TYPE *solution, TYPE *optimalValue)
     HANDLE_ERROR(cudaHostRegister(problem->objectiveFunction, BYTE_SIZE(problem->vars), cudaHostRegisterDefault));
 
 #ifdef TIMER
-    initCsv();
+    if(benchmark){
+        initCsvBenchmark(problem->vars, problem->constraints);
+    }else{
+        initCsv();
+    }
 #endif
 
     int result = phase1(tabular, base_h, base_map);

@@ -21,6 +21,17 @@ void initCsv()
     HANDLE_ERROR(cudaEventCreate(&stopEvent));
 }
 
+void initCsvBenchmark(int vars, int constraints)
+{
+    char fileName[50];
+    sprintf(fileName, "..\\data\\measures\\benchmark_%d_%d.txt", vars, constraints);
+    fileChrono = openFile(fileName, "w");
+    fprintf(fileChrono, "vars,contraints,operation,elapsed_time\n");
+
+    HANDLE_ERROR(cudaEventCreate(&startEvent));
+    HANDLE_ERROR(cudaEventCreate(&stopEvent));
+}
+
 void start(tabular_t* tabular, const char *operation)
 {
     fprintf(fileChrono, "%d,%d,%s,", tabular->rows, tabular->cols, operation);
