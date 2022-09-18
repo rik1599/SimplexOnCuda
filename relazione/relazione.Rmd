@@ -657,77 +657,213 @@ Se si mette in relazione il tempo medio per ***ciclo di solve*** con il numero d
 
 Si nota come il tempo medio necessario per ciclo di solve sembra crescere linearmente all'aumentare della dimensione effettiva del tableu.
 
-### Confronti tra diverse gpu
-Questa sezione si concentra nell'analizzare le prestazioni ottenute con diverse gpu e la conseguente scalabilità delle performance in base alle prestazioni del dispostivo utilizzato
+## Confronti tra diverse gpu
+Questa sezione si analizzerà come l'algoritmo scala utilizzando diverse gpu con diverse con diverse caratteristiche e performance.
 
+### Gpu utilizzate
+Per analizzare come il problema scala in base alla gpu sono state confrontati i risultati ottenuti con una "mx 250" ed una "rtx 2070 super" utilizzando il benchmark già descritto in precedenza.
+
+### Confronto risultati
+Dato che il tempo medio per ciclo di solve dipende principalmente dalla dimensione reale del tableu i confronti tra schede diverse verranno effettuati in base a tale parametro, visto inoltre che questa varia in base alla fase in cui ci si trova solo una delle due verrà presa in considerazione, in particolare si è scelta la fase 1 visto il maggiore numero di cicli che eseguiti che permettono di ottenere dei tempi medi più attendibili. <!--  forse dato che si utilizza la dimensione effettiva si potrebbe unire fase 1 e 2 -->
+
+<!-- tempo medio in funzione della dimensione reale del tableu con più schede -->
 ```{r, echo=FALSE}
-mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
-mx250_2048 <- read.csv("./../data/measures/mx250/mx250_2048.txt")
-mx250_4096 <- read.csv("./../data/measures/mx250/mx250_4096.txt")
-mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
-rtx3070_1024 <- read.csv("./../data/measures/rtx3070/rtx3070_1024.txt")
-rtx3070_2048 <- read.csv("./../data/measures/rtx3070/rtx3070_2048.txt")
-rtx3070_4096 <- read.csv("./../data/measures/rtx3070/rtx3070_4096.txt")
-rtx3070_8192 <- read.csv("./../data/measures/rtx3070/rtx3070_8192.txt")
-times_mx250_1024 <- subset(mx250_1024, vars == "3073" & operation == "solve")
-times_mx250_2048 <- subset(mx250_2048, vars == "6145" & operation == "solve")
-times_mx250_4096 <- subset(mx250_4096, vars == "12289" & operation == "solve")
-times_mx250_8192 <- subset(mx250_8192, vars == "24577" & operation == "solve")
-times_rtx3070_1024 <- subset(rtx3070_1024, vars == "3073" & operation == "solve")
-times_rtx3070_2048 <- subset(rtx3070_2048, vars == "6145" & operation == "solve")
-times_rtx3070_4096 <- subset(rtx3070_4096, vars == "12289" & operation == "solve")
-times_rtx3070_8192 <- subset(rtx3070_8192, vars == "24577" & operation == "solve")
-############ 1024 ##########
-dta_A <- mean(times_mx250_1024$elapsed_time)
-dta_B <- mean(times_rtx3070_1024$elapsed_time)
-mx250_Data <- dta_A
-rtx3070_Data <- dta_B
-############ 2048 ##########
-dta_A <- mean(times_mx250_2048$elapsed_time)
-dta_B <- mean(times_rtx3070_2048$elapsed_time)
-mx250_Data <- c(mx250_Data, dta_A)
-rtx3070_Data <- c(rtx3070_Data, dta_B)
-############ 4096 ##########
-dta_A <- mean(times_mx250_4096$elapsed_time)
-dta_B <- mean(times_rtx3070_4096$elapsed_time)
-mx250_Data <- c(mx250_Data, dta_A)
-rtx3070_Data <- c(rtx3070_Data, dta_B)
-########### 8192 ###########
-dta_A <- mean(times_mx250_8192$elapsed_time)
-dta_B <- mean(times_rtx3070_8192$elapsed_time)
-mx250_Data <- c(mx250_Data, dta_A)
-rtx3070_Data <- c(rtx3070_Data, dta_B)
-#### preparazione dataframes ####
-edge <- c(1024,2048,4096,8192)
-mx250_Data <- data.frame(mx250_Data, edge)
-rtx3070_Data <- data.frame(rtx3070_Data, edge)
-colnames(mx250_Data) <- c("time", "edge")
-colnames(rtx3070_Data) <- c("time", "edge")
-plot(data = mx250_Data, time~edge, main = "Tempo per singolo ciclo di solve", type = 'b', xlab = "Dimensione lato matrice", ylab = "Tempo per ciclo", col = "black")
-lines(data = rtx3070_Data, time~edge, type = 'b', col = "green")
-legend("topleft", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
+mx250.means <- c()
+rtx2070super.means <- c()
+vars <- c()
+constraints <- c()
+trueVarsPhaseOne <- c()
+
+values <- c(256, 512, 1024, 2048, 4096, 8192)
+for(var in values){               ##usiamo un for per caricarli tutti
+  for(constraint in values){
+    
+    constraints <- c(constraints, constraint)
+    vars <- c(vars, var)
+    
+    
+    #mx250
+    
+      ##composizione nome file
+      temp1 <- format(var)
+      temp2 <- format(constraint)
+      fileLocation <- "./../data/measures/mx250_2/"    #sostituire con locazione desiderata
+      filename <- paste(fileLocation, "benchmark_", temp1, "_", temp2, ".txt", sep = "")
+      
+      ##lettura file
+      variables <- (var + 2*constraint) + 1
+      currentData <- read.csv(filename)
+      currentData <- subset(currentData, vars == variables & operation == "solve")
+      mx250.means <- c(mx250.means, mean(currentData$elapsed_time))
+      
+    #mx250
+    
+      ##composizione nome file
+      temp1 <- format(var)
+      temp2 <- format(constraint)
+      fileLocation <- "./../data/measures/rtx2070super/"    #sostituire con locazione desiderata
+      filename <- paste(fileLocation, "benchmark_", temp1, "_", temp2, ".txt", sep = "")
+      
+      ##lettura file
+      variables <- (var + 2*constraint) + 1
+      currentData <- read.csv(filename)
+      currentData <- subset(currentData, vars == variables & operation == "solve")
+      rtx2070super.means <- c(rtx2070super.means, mean(currentData$elapsed_time))
+      
+    #altro  
+    trueVarsPhaseOne <- c(trueVarsPhaseOne, variables)
+  }
+}
+
+names <- c("vars", "constraints", "trueVars", "values")
+
+#creazione data frames
+mx250.means <- data.frame(vars, constraints, trueVarsPhaseOne, mx250.means);
+rtx2070super.means <- data.frame(vars, constraints, trueVarsPhaseOne, rtx2070super.means);
+
+colnames(mx250.means) <- names; 
+colnames(rtx2070super.means) <- names;
+
+mx250.means$cells <- mx250.means$constraints * mx250.means$trueVars
+rtx2070super.means$cells <- rtx2070super.means$constraints * rtx2070super.means$trueVars
+
+##inseriamo la linea di regressione
+mx250.lm <- lm(data = mx250.means, values~cells)
+rtx2070super.lm <- lm(data = rtx2070super.means, values~cells)
+
+plot(data = mx250.means, values~cells, main = "Tempo medio per singolo ciclo di solve in fase 1", xlab = "numero di elementi del tableu", ylab = "Tempo per ciclo", col = "black")
+points(data = rtx2070super.means, values~cells, col = "green")
+abline(mx250.lm, col = "black")
+abline(rtx2070super.lm, col = "green")
+legend("topleft", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
+
+###roba vecchia
+# mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
+# mx250_2048 <- read.csv("./../data/measures/mx250/mx250_2048.txt")
+# mx250_4096 <- read.csv("./../data/measures/mx250/mx250_4096.txt")
+# mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
+# rtx3070_1024 <- read.csv("./../data/measures/rtx3070/rtx3070_1024.txt")
+# rtx3070_2048 <- read.csv("./../data/measures/rtx3070/rtx3070_2048.txt")
+# rtx3070_4096 <- read.csv("./../data/measures/rtx3070/rtx3070_4096.txt")
+# rtx3070_8192 <- read.csv("./../data/measures/rtx3070/rtx3070_8192.txt")
+# times_mx250_1024 <- subset(mx250_1024, vars == "3073" & operation == "solve")
+# times_mx250_2048 <- subset(mx250_2048, vars == "6145" & operation == "solve")
+# times_mx250_4096 <- subset(mx250_4096, vars == "12289" & operation == "solve")
+# times_mx250_8192 <- subset(mx250_8192, vars == "24577" & operation == "solve")
+# times_rtx3070_1024 <- subset(rtx3070_1024, vars == "3073" & operation == "solve")
+# times_rtx3070_2048 <- subset(rtx3070_2048, vars == "6145" & operation == "solve")
+# times_rtx3070_4096 <- subset(rtx3070_4096, vars == "12289" & operation == "solve")
+# times_rtx3070_8192 <- subset(rtx3070_8192, vars == "24577" & operation == "solve")
+# ############ 1024 ##########
+# dta_A <- mean(times_mx250_1024$elapsed_time)
+# dta_B <- mean(times_rtx3070_1024$elapsed_time)
+# mx250_Data <- dta_A
+# rtx3070_Data <- dta_B
+# ############ 2048 ##########
+# dta_A <- mean(times_mx250_2048$elapsed_time)
+# dta_B <- mean(times_rtx3070_2048$elapsed_time)
+# mx250_Data <- c(mx250_Data, dta_A)
+# rtx3070_Data <- c(rtx3070_Data, dta_B)
+# ############ 4096 ##########
+# dta_A <- mean(times_mx250_4096$elapsed_time)
+# dta_B <- mean(times_rtx3070_4096$elapsed_time)
+# mx250_Data <- c(mx250_Data, dta_A)
+# rtx3070_Data <- c(rtx3070_Data, dta_B)
+# ########### 8192 ###########
+# dta_A <- mean(times_mx250_8192$elapsed_time)
+# dta_B <- mean(times_rtx3070_8192$elapsed_time)
+# mx250_Data <- c(mx250_Data, dta_A)
+# rtx3070_Data <- c(rtx3070_Data, dta_B)
+# #### preparazione dataframes ####
+# edge <- c(1024,2048,4096,8192)
+# mx250_Data <- data.frame(mx250_Data, edge)
+# rtx3070_Data <- data.frame(rtx3070_Data, edge)
+# colnames(mx250_Data) <- c("time", "edge")
+# colnames(rtx3070_Data) <- c("time", "edge")
+# plot(data = mx250_Data, time~edge, main = "Tempo per singolo ciclo di solve", type = 'b', xlab = "Dimensione lato matrice", ylab = "Tempo per ciclo", col = "black")
+# lines(data = rtx3070_Data, time~edge, type = 'b', col = "green")
+# legend("topleft", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
 ```
-Si può notare come all'aumentare della dimensione del problema la differenza di tempo necessario per l'esecuzione del ciclo tra schede video con diverse prestazioni tende ad aumentare.
+
+Dal grafico è chiaro come il tempo necessario per ***ciclo di solve*** cresca diversamente per le due schede.
+Si può anche notare come la differenza di tempo speso per ***ciclo di solve*** aumenti all'aumentare della dimensione reale del problema.
 
 ```{r, echo=FALSE}
-mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
-mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
-rtx3070_1024 <- read.csv("./../data/measures/rtx3070/rtx3070_1024.txt")
-rtx3070_8192 <- read.csv("./../data/measures/rtx3070/rtx3070_8192.txt")
 
-mx250_1024 <- subset(mx250_1024, vars == "3073" & operation == "solve")
-mx250_8192 <- subset(mx250_8192, vars == "24577" & operation == "solve")
-rtx3070_1024 <- subset(rtx3070_1024, vars == "3073" & operation == "solve")
-rtx3070_8192 <- subset(rtx3070_8192, vars == "24577" & operation == "solve")
+#salviamo per poter modificare
+diff_mx250 <- mx250.means
+diff_rtx2070super <- rtx2070super.means
 
-difference_1024 <- mean(mx250_1024$elapsed_time)-mean(rtx3070_1024$elapsed_time)
-difference_8192 <- mean(mx250_8192$elapsed_time)-mean(rtx3070_8192$elapsed_time)
-rapporto_1024 <- mean(mx250_1024$elapsed_time)/mean(rtx3070_1024$elapsed_time)
-rapporto_8192 <- mean(mx250_8192$elapsed_time)/mean(rtx3070_8192$elapsed_time)
+cells <- mx250.means$cells
+
+difference <- c()
+ratio <- c()
+
+for(cell in cells){
+  current_mx250 <- subset(diff_mx250, cells == cell)
+  current_rtx2070super <- subset(diff_rtx2070super, cells == cell)
+  
+  ##salviamo le differenze che ci servono a parte
+  
+  if(cell == 196864){
+    difference_256x256 <- current_mx250$values - current_rtx2070super$values
+    ratio_256x256 <- current_mx250$values/current_rtx2070super$values
+  }
+  if(cell == 201334784){
+    difference_8192x8192 <- current_mx250$values - current_rtx2070super$values
+    ratio_8192x8192 <- current_mx250$values/current_rtx2070super$values
+  }
+  
+  value <- current_mx250$times
+  
+  difference <-  c(difference, current_mx250$values - current_rtx2070super$values)
+  ratio <- c(ratio, current_mx250$values/current_rtx2070super$values)
+}
+
+difference <- data.frame(cells, difference);
+ratio <- data.frame(cells, ratio);
+
+par(mfrow = c(1,1))
+plot(data = difference, difference~cells  , col = "black", main = "Differenza di tempo medio per ciclo di solve tra mx250 e rtx2070_super")
+lines(lowess( difference$cells, difference$difference), col = "green", lwd = .5)
+plot(data = ratio, ratio~cells  , col = "black", main = "Rapporto tra tempo medio per ciclo di solve tra mx250 e rtx2070_super")
+lines(lowess( ratio$cells, ratio$ratio, f = .85), col = "green", lwd = .5)
+par(mfrow = c(1,1))
+
+##altrimenti non compila
+ difference_1024 <- 0
+ difference_8192 <- 0
+ rapporto_1024 <- 0
+ rapporto_8192 <- 0
+ 
+# mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
+# mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
+# rtx3070_1024 <- read.csv("./../data/measures/rtx3070/rtx3070_1024.txt")
+# rtx3070_8192 <- read.csv("./../data/measures/rtx3070/rtx3070_8192.txt")
+# 
+# mx250_1024 <- subset(mx250_1024, vars == "3073" & operation == "solve")
+# mx250_8192 <- subset(mx250_8192, vars == "24577" & operation == "solve")
+# rtx3070_1024 <- subset(rtx3070_1024, vars == "3073" & operation == "solve")
+# rtx3070_8192 <- subset(rtx3070_8192, vars == "24577" & operation == "solve")
+# 
+ # difference_1024 <- mean(mx250_1024$elapsed_time)-mean(rtx3070_1024$elapsed_time)
+ # difference_8192 <- mean(mx250_8192$elapsed_time)-mean(rtx3070_8192$elapsed_time)
+ # rapporto_1024 <- mean(mx250_1024$elapsed_time)/mean(rtx3070_1024$elapsed_time)
+ # rapporto_8192 <- mean(mx250_8192$elapsed_time)/mean(rtx3070_8192$elapsed_time)
 ```
-Infatti per problemi di dimensione 1024x1024 si ha che una rtx3070 risulta utilizzare in media `r round(difference_1024/1000, digits = 2)`ms in meno della mx250, differenza che raggiunge i `r round(difference_8192/1000, digits=2)`ms nel caso di un problema di dimensione 8192x8192. La maggiore efficienza della rtx 3070 passa da `r round(rapporto_1024, digits = 1)`x rispetto alla mx 250 per un problema 1024x1024 a `r round(rapporto_8192, digits = 1)`x nel caso di un problema 8192x8192.
+
+Dal primo grafico è possibile notare come la differenza di tempo medio tra la mx250 e la rtx2070super cresca limearmente all'aumentare della dimensione effettiva del problema, ovvero all'aumentare della dimensione di celle effettive del tableu, passando da `r round(difference_256x256/1000, digits = 2)`ms nel caso di problemi di dimensione 256x256 a `r round(difference_8192x8192/1000, digits = 2)`ms per quelli di dimensione 8192x8192.
+
+Si può notare dal secondo grafico come il rapporto tra tempo medio tra le due schede tende ad aumentare in quasi logaritmica, per problemi piccoli si ha infatti che il rapporto tra il tempo della rtx 2070 e della mx250 risulta essere molto basso, ovvero nel caso del problema di dimensione 256x256 di `r round(ratio_256x256, digits = 2)` (basso perchè sembrerebbe che la 2070 super sia solo r round(ratio_256x256, digits = 2)x migliore della mx 250), cresce però molto velocemente per poi stabilizzarsi intorno a `r round(ratio_8192x8192, digits = 2)` per problemi più grandi.
+
+Si può concludere che la nostra soluzione sfrutta permetta di sfruttare al meglio le schede con caratteristiche migliori solo per problemi sufficientemente grandi, per problemi piccoli invece i dati mostrano comunque un miglioramento ma non eccessivamente elevato.
+
+<!-- Infatti per problemi di dimensione 1024x1024 si ha che una rtx3070 risulta utilizzare in media `r round(difference_1024/1000, digits = 2)`ms in meno della mx250, differenza che raggiunge i `r round(difference_8192/1000, digits=2)`ms nel caso di un problema di dimensione 8192x8192. La maggiore efficienza della rtx 3070 passa da `r round(rapporto_1024, digits = 1)`x rispetto alla mx 250 per un problema 1024x1024 a `r round(rapporto_8192, digits = 1)`x nel caso di un problema 8192x8192. -->
+
+### tempo medio solve a confronto
 
 ```{r, echo=FALSE}
+
 mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
 mx250_2048 <- read.csv("./../data/measures/mx250/mx250_2048.txt")
 mx250_4096 <- read.csv("./../data/measures/mx250/mx250_4096.txt")
