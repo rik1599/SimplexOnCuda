@@ -828,6 +828,11 @@ plot(data = difference, difference~cells  , col = "black", main = "Differenza di
 lines(lowess( difference$cells, difference$difference), col = "green", lwd = .5)
 plot(data = ratio, ratio~cells  , col = "black", main = "Rapporto tra tempo medio per ciclo di solve tra mx250 e rtx2070_super")
 lines(lowess( ratio$cells, ratio$ratio, f = .85), col = "green", lwd = .5)
+ratioFunction <- function(x){
+      ((mx250.lm$coefficients[1] + mx250.lm$coefficients[2] * x)/
+      (rtx2070super.lm$coefficients[1] + rtx2070super.lm$coefficients[2] * x))
+  }
+curve(ratioFunction, add = TRUE, col = "red")
 par(mfrow = c(1,1))
 
 ##altrimenti non compila
@@ -854,56 +859,92 @@ par(mfrow = c(1,1))
 
 Dal primo grafico è possibile notare come la differenza di tempo medio tra la mx250 e la rtx2070super cresca limearmente all'aumentare della dimensione effettiva del problema, ovvero all'aumentare della dimensione di celle effettive del tableu, passando da `r round(difference_256x256/1000, digits = 2)`ms nel caso di problemi di dimensione 256x256 a `r round(difference_8192x8192/1000, digits = 2)`ms per quelli di dimensione 8192x8192.
 
-Si può notare dal secondo grafico come il rapporto tra tempo medio tra le due schede tende ad aumentare in quasi logaritmica, per problemi piccoli si ha infatti che il rapporto tra il tempo della rtx 2070 e della mx250 risulta essere molto basso, ovvero nel caso del problema di dimensione 256x256 di `r round(ratio_256x256, digits = 2)` (basso perchè sembrerebbe che la 2070 super sia solo r round(ratio_256x256, digits = 2)x migliore della mx 250), cresce però molto velocemente per poi stabilizzarsi intorno a `r round(ratio_8192x8192, digits = 2)` per problemi più grandi.
+Si può notare dal secondo grafico come il rapporto tra tempo medio tra le due schede tende ad aumentare seguendo una andamento iperbolico (in rosso l'iperbole ottenuta rapportando la retta di regressione per i tempi delle due schede video), per problemi piccoli si ha infatti che il rapporto tra il tempo della rtx 2070 e della mx250 risulta essere molto basso, ovvero nel caso del problema di dimensione 256x256 di `r round(ratio_256x256, digits = 2)` (basso perchè sembrerebbe che la 2070 super sia solo `r round(ratio_256x256, digits = 2)`x migliore della mx 250), cresce però molto velocemente per poi stabilizzarsi intorno a `r round(ratio_8192x8192, digits = 2)` per problemi più grandi
 
-Si può concludere che la nostra soluzione sfrutta permetta di sfruttare al meglio le schede con caratteristiche migliori solo per problemi sufficientemente grandi, per problemi piccoli invece i dati mostrano comunque un miglioramento ma non eccessivamente elevato.
+Si può concludere che la nostra soluzione permetta di sfruttare al meglio le schede con caratteristiche hardware migliori solo per problemi sufficientemente grandi, per problemi piccoli invece i dati mostrano un miglioramento non eccessivamente elevato.
 
 <!-- Infatti per problemi di dimensione 1024x1024 si ha che una rtx3070 risulta utilizzare in media `r round(difference_1024/1000, digits = 2)`ms in meno della mx250, differenza che raggiunge i `r round(difference_8192/1000, digits=2)`ms nel caso di un problema di dimensione 8192x8192. La maggiore efficienza della rtx 3070 passa da `r round(rapporto_1024, digits = 1)`x rispetto alla mx 250 per un problema 1024x1024 a `r round(rapporto_8192, digits = 1)`x nel caso di un problema 8192x8192. -->
 
 ### tempo medio solve a confronto
-
+<!-- qui meglio decidere quali tenere e quali no, magari solo alcuni, che altrimenti non viene benissimo -->
 ```{r, echo=FALSE}
+mx250_256 <- read.csv("./../data/measures/mx250_2/benchmark_256_256.txt")
+mx250_512 <- read.csv("./../data/measures/mx250_2/benchmark_512_512.txt")
+mx250_1024 <- read.csv("./../data/measures/mx250_2/benchmark_1024_1024.txt")
+mx250_2048 <- read.csv("./../data/measures/mx250_2/benchmark_2048_2048.txt")
+mx250_4096 <- read.csv("./../data/measures/mx250_2/benchmark_4096_4096.txt")
+mx250_8192 <- read.csv("./../data/measures/mx250_2/benchmark_8192_8192.txt")
 
-mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
-mx250_2048 <- read.csv("./../data/measures/mx250/mx250_2048.txt")
-mx250_4096 <- read.csv("./../data/measures/mx250/mx250_4096.txt")
-mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
-rtx3070_1024 <- read.csv("./../data/measures/rtx3070/rtx3070_1024.txt")
-rtx3070_2048 <- read.csv("./../data/measures/rtx3070/rtx3070_2048.txt")
-rtx3070_4096 <- read.csv("./../data/measures/rtx3070/rtx3070_4096.txt")
-rtx3070_8192 <- read.csv("./../data/measures/rtx3070/rtx3070_8192.txt")
+rtx2070super_256 <- read.csv("./../data/measures/rtx2070super/benchmark_256_256.txt")
+rtx2070super_512 <- read.csv("./../data/measures/rtx2070super/benchmark_512_512.txt")
+rtx2070super_1024 <- read.csv("./../data/measures/rtx2070super/benchmark_1024_1024.txt")
+rtx2070super_2048 <- read.csv("./../data/measures/rtx2070super/benchmark_2048_2048.txt")
+rtx2070super_4096 <- read.csv("./../data/measures/rtx2070super/benchmark_4096_4096.txt")
+rtx2070super_8192 <- read.csv("./../data/measures/rtx2070super/benchmark_8192_8192.txt")
+
+times_mx250_256 <- subset(mx250_256, vars == "769" & operation == "solve")
+times_mx250_512 <- subset(mx250_512, vars == "1537" & operation == "solve")
 times_mx250_1024 <- subset(mx250_1024, vars == "3073" & operation == "solve")
 times_mx250_2048 <- subset(mx250_2048, vars == "6145" & operation == "solve")
 times_mx250_4096 <- subset(mx250_4096, vars == "12289" & operation == "solve")
 times_mx250_8192 <- subset(mx250_8192, vars == "24577" & operation == "solve")
-times_rtx3070_1024 <- subset(rtx3070_1024, vars == "3073" & operation == "solve")
-times_rtx3070_2048 <- subset(rtx3070_2048, vars == "6145" & operation == "solve")
-times_rtx3070_4096 <- subset(rtx3070_4096, vars == "12289" & operation == "solve")
-times_rtx3070_8192 <- subset(rtx3070_8192, vars == "24577" & operation == "solve")
+
+times_rtx2070super_256 <- subset(rtx2070super_256, vars == "769" & operation == "solve")
+times_rtx2070super_512 <- subset(rtx2070super_512, vars == "1537" & operation == "solve")
+times_rtx2070super_1024 <- subset(rtx2070super_1024, vars == "3073" & operation == "solve")
+times_rtx2070super_2048 <- subset(rtx2070super_2048, vars == "6145" & operation == "solve")
+times_rtx2070super_4096 <- subset(rtx2070super_4096, vars == "12289" & operation == "solve")
+times_rtx2070super_8192 <- subset(rtx2070super_8192, vars == "24577" & operation == "solve")
+
 par(mfrow=c(2,2))
+
+############ 256 ##########
+dta_A <- density(times_mx250_256$elapsed_time, na.rm = TRUE)
+dta_B <- density(times_rtx2070super_256$elapsed_time, na.rm = TRUE)
+plot(dta_A, col = "black", main = "Matrice 256x256", xlim = c(0,1500), ylim = c(0, max(dta_A$y, dta_B$y)))
+lines(dta_B, col = "green")
+legend("topright", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
+
+############ 512 ##########
+dta_A <- density(times_mx250_512$elapsed_time, na.rm = TRUE)
+dta_B <- density(times_rtx2070super_512$elapsed_time, na.rm = TRUE)
+plot(dta_A, col = "black", main = "Matrice 512x512", xlim = c(0,2000), ylim = c(0, max(dta_A$y, dta_B$y)))
+lines(dta_B, col = "green")
+legend("topright", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
+
 ############ 1024 ##########
 dta_A <- density(times_mx250_1024$elapsed_time, na.rm = TRUE)
-dta_B <- density(times_rtx3070_1024$elapsed_time, na.rm = TRUE)
+dta_B <- density(times_rtx2070super_1024$elapsed_time, na.rm = TRUE)
 plot(dta_A, col = "black", main = "Matrice 1024x1024", xlim = c(0,6000), ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
-legend("topright", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
+legend("topright", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
+
 ############ 2048 ##########
 dta_A <- density(times_mx250_2048$elapsed_time, na.rm = TRUE)
-dta_B <- density(times_rtx3070_2048$elapsed_time, na.rm = TRUE)
-plot(dta_A, col = "black", main = "Matrice 2048x2048", ylim = c(0, max(dta_A$y, dta_B$y)))
+dta_B <- density(times_rtx2070super_2048$elapsed_time, na.rm = TRUE)
+plot(dta_A, col = "black", main = "Matrice 2048x2048", xlim = c(0,18000), ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
-legend("topright", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
+legend("topright", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
+
 ############ 4096 ##########
 dta_A <- density(times_mx250_4096$elapsed_time, na.rm = TRUE)
-dta_B <- density(times_rtx3070_4096$elapsed_time, na.rm = TRUE)
-plot(dta_A, col = "black", main = "Matrice 4096x4096", ylim = c(0, max(dta_A$y, dta_B$y)))
+dta_B <- density(times_rtx2070super_4096$elapsed_time, na.rm = TRUE)
+plot(dta_A, col = "black", main = "Matrice 4096x4096", xlim = c(0,75000), ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
-legend("topright", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
+legend("topright", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
+
 ########### 8192 ###########
 dta_A <- density(times_mx250_8192$elapsed_time, na.rm = TRUE)
-dta_B <- density(times_rtx3070_8192$elapsed_time, na.rm = TRUE)
-plot(dta_A, col = "black", main = "Matrice 8192x8192", ylim = c(0, max(dta_A$y, dta_B$y)))
+dta_B <- density(times_rtx2070super_8192$elapsed_time, na.rm = TRUE)
+plot(dta_A, col = "black", main = "Matrice 8192x8192", xlim = c(0,350000), ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
-legend("topright", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
-par(mfrow=c(1,1))
+legend("topright", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
 ```
+
+Attraverso questi grafici si può notare come il tempo per la il ***ciclo di solve*** sia distribuito per le due schede video, si nota ovviamente una distribuzione di tempi inferiori per la 2070 super rispetto alla mx250.
+
+Si può notare anche un comportamento anomalo nella distribuzione dei tempi, infatti invece che avere una distribuzione gaussiana attorno ad un unico valore medio si ottengono due picchi, questo avviene indipendentemente dalla dimensione del problema utilizzato e dalla scheda utilizzata.
+
+La causa sembra essere dovuta ad una variazione del tempo di esecuzione del kernel di aggiornamento del tableu ma il motivo di tale variazione non è stato possibile da individuare.
+
+
