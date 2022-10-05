@@ -117,7 +117,7 @@ La base viene memorizzata in un vettore a parte.
 \KwData{$T \in \mathbb{R}^{(m+1)\times (n+1)}, \mathcal{B}\in \mathbb{N}^m$}
 \KwOut{$x$ come soluzione, $\mathcal{B}$ base della soluzione e $T[0][n]$ valore ottimo della funzione obiettivo OPPURE problema UNBOUNDED}
 
-$A \gets T[1..m][0..n-1]$ \tcc*[r]{La notazione $[a..b]$ indica una porzione di array dall'indice $a$ all'indice $b$}
+$A \gets T[1..m][0..n-1]$ \tcc*[r]{La notazione $[a..b]$ indica una porzione di array dall'indice $a$ all'indice $b$ (compresi)}
 $b \gets T[1..m][n]$\;
 $c \gets T[0][0..n-1]$\;
 \While{$\exists i : c[i] < 0$}{
@@ -133,10 +133,10 @@ $c \gets T[0][0..n-1]$\;
   \For{$i\gets 0\ \text{to}\ m$}{
     \For{$j\gets 0\ \text{to}\ n$}{
       \If{$i = k$}{
-        $T[i][j] = \frac{1}{p}T[i][j]$\;
+        $T[i][j] \gets \frac{1}{p}T[i][j]$\;
       }
       \Else{
-        $T[i][j] = T[i][j] - \frac{C_p[i]}{p}R_p[j]$\;
+        $T[i][j] \gets T[i][j] - \frac{C_p[i]}{p}R_p[j]$\;
       }
     }
   }
@@ -312,9 +312,9 @@ Per fare ciò si effettuano una serie di eliminazioni di Gauss sottraendo al vet
 
 Per fare questa operazione sono stati provati due approcci:
 
-- un approccio "naive" che sfrutta le aomicAdd native e che funziona banalmente lasciando ad ogni thread del tile il caricamento, moltiplicazione ed aggiornamento nella funzione obiettivo
+- un approccio "naive" che sfrutta le atomicAdd native e che funziona banalmente lasciando ad ogni thread del tile il caricamento, moltiplicazione ed aggiornamento nella funzione obiettivo,
 
-- un approccio più ragionato che sfrutta la riduzione, dove l'aggiornamento della funzione obiettivo viene fatta solo da un sottoinsieme di kernel sfruttando a tal fine la riduzione intra warp
+- un approccio più ragionato che sfrutta la riduzione, dove l'aggiornamento della funzione obiettivo viene fatta solo da un sottoinsieme di kernel sfruttando a tal fine la riduzione intra-warp.
 
 Il motivo per sono state pensate due soluzioni è dovuto al fatto che le somme atomiche per i double sono disponibili solo a partire dalla compute capability 6.0, il che richiede di implementare manualmente le somme atomiche attraverso l'operazione atomica CAS se si vuole garantire il funzionamento del kernel anche per schede video con C.C. inferiore alla 6.0.
 
@@ -325,35 +325,79 @@ Nella seguente tabella sono riportati i tempi ottenuti per i due kernel (con con
 |:----------------:|:--------------------:|:----------------:|:--------------------:|
 |     209.23ms     |       52.142ms       |     38.720ms     |       50.610ms       |
 
-Table: Risultati sperimentali dei diversi kernel, con la configurazione di lancio ottimale (blocco: 32*32, grid: (1, roof(24.588/32))) ed ottenuti con una scheda mx250.
+Table: Risultati sperimentali dei diversi kernel, con la configurazione di lancio ottimale (blocco: 32*32, grid: (1, roof(24.588/32))) ed ottenuti con una scheda Geforce MX250
 
 IL risultato peggiore ottenuto risulta essere quello con l'approccio naive e con cc < 6.0, che impiega circa quattro volte tanto gli altri casi. Per tale motivo in tale situazione conviene utilizzare l'approccio con riduzione.
 
 Nel caso di cc >= 6.0 la situazione è diversa e quello più efficiente risulta essere quello che sfrutta l'approccio naive, grazie all'ottimizzazione dell'atomicAdd
 
-A partire da queste considerazioni si è deciso di sfruttare l'approccio naive mantenendo quello ragionato solamente nel caso il programma venga compilato per essere utilizzato su schede video con cc < 6.0
+A partire da queste considerazioni si è deciso di sfruttare l'approccio naive mantenendo quello ragionato solamente nel caso il programma venga compilato per essere utilizzato su schede video con cc < 6.0.
 
-In ogni caso nella pratica il tempo necessario per svolgere l'eliminazione di gauss è trascurabile, anche nel caso peggiore (naive, cc<6.0 e privo di ottimizzazioni che impiega un tempo dell'ordine delle decine di secondi con gpu mx250), come si vedrà durante la discussione dei risultati sperimentali.
+Per fare ciò si utilizza la macro \_\_CUDA_ARCH\_\_ con la direttiva di pre-processore \#if.
+
+In ogni caso nella pratica il tempo necessario per svolgere l'eliminazione di gauss è trascurabile, anche nel caso peggiore (naive, cc<6.0 e privo di ottimizzazioni che impiega un tempo dell'ordine delle decine di secondi con gpu MX250), come si vedrà durante la discussione dei risultati sperimentali.
 
 ### Verifica di degenerazione (Algoritmo \ref{alg:simplex-phase1}, riga 26)
 Per verificare se il problema è degenere si scandisce il vettore della base e si verifica se l'elemento in questione sia compreso tra $n+m$ e $n+2m$ (non compreso). Se sì, si incrementa di 1 (con *atomicAdd*) un contatore in global memory e una volta terminata la scansione si controlla se il valore di questo contatore sia maggiore di 0.
 
-### Sostituzione vettore dei costi (Algoritmo \ref{alg:simplex-phase2}, righe 1-2)
+Viene utilizzato lo schema di parallelizzazione visto a lezione per le riduzioni intra-warp: 
 
+- 512 thread per blocco,
+
+- il numero di blocchi calcolato con la formula $\min((N + 512 - 1)/512, 1024)$, con $N$ dimensione del vettore,
+
+- ogni thread controlla più elementi del vettore utillizzando l'indirizzamento sequenziale.
+
+### Sostituzione vettore dei costi (Algoritmo \ref{alg:simplex-phase2}, righe 1-2)
+All'inizio della fase 2 il vettore dei costi utilizzato nella fase 1 va sostituito nei primi $n$ elementi dal vettore della funzione obiettivo del problema originale, mentre il resto del vettore (variabili slack) va impostato a 0.
+
+Anche qui vengono utilizzati due CUDA Stream: il primo esegue *cudaMemsetAsync* sugli ultimi $m$ elementi del vettore dei costi per impostare i valori a 0,
+il secondo copia il vettore della funzione obiettivo dalla memoria host ai primi $n$ elementi del vettore dei costi con *cudaMemcpyAsync* e nega il segno degli elementi copiati (utilizzando lo schema già visto nella sezione precedente).
 
 ### Ricerca dell'elemento minimo nel vettore dei costi e in quello degli indicatori (Algoritmo \ref{alg:simplex}, righe 4-5 e 9)
+Questa fase prevede di trovare il minimo in due vettori di numeri comunicando allo stesso tempo l'**indice** dell'elemento nel vettore.
+
+Per fare ciò è stata implementata una variante della riduzione intra-warp a due fasi vista a lezione che lavora su due vettori: il primo contiene i valori candidati, il secondo gli indici di questi valori nel vettore. Quest'ultimo inizialmente è vuoto e viene popolato alla fine della prima fase con gli indici dei valori candidati per ogni blocco, per essere poi utilizzati nella seconda fase per ottenere il minimo globale.
+
+Per distinguere le due fasi senza dover riscrivere due volte la stessa funzione sono stati utilizzate le funzioni template di C++ con un parametro booleano.
 
 ### Verifica di unbounding (Algoritmo \ref{alg:simplex}, riga 6)
+Per verificare se il problema è unbounded si deve verificare che tutti i valori del vettore della variabile che sta per entrare in base siano minori o uguali a 0. 
+
+Per fare ciò è stata implementata una reduction (sempre intra-warp a due fasi perchè non esiste *atomicMax* per i valori double) per ottenere il valore massimo di un vettore. Se il valore massimo di un vettore è $\leq 0$, allora devono per forza esserlo anche tutti gli altri.
+
+Le procedure di reduction utilizzano copie dei vettori passati come parametri.
 
 ### Aggiornamento tableau (Algoritmo \ref{alg:simplex}, righe 12-24)
+Una volta ottenuto il pivot si procede ad aggiornare il tableau.
+Per prima cosa si copiano in due nuovi vettori in global memory la riga (con *cudaMemcpy*) e la colonna (con un kernel apposito) del pivot, dopodiché viene lanciato il kernel per l'aggiornamento.
+
+Per lo schema di parallelizzazione è stato utilizzato lo schema visto a lezione per l'esercizio dell'istogramma per l'accesso sequenziale (che a sua volta estende quello visto per le reduction). 
+
+Per quanto riguarda la grid si è visto che per una matrice di $8192 \times 8192$ elementi e dati dei blocchi da $32\times 32$ thread, dal punto di vista delle prestazioni la grid migliore è risultata essere quella da $16\times 16$ blocchi.
+
+Prendendo in considerazione che per una matrice da $32 \times 32$ elementi il pattern migliore è quello che ad ogni thread assegna un valore, per calcolare il numero di blocchi necessari data una dimensione della matrice è stata calcolata una retta tra i punti $(1,32)$ e $(8192,16)$ ottenendo così l'equazione $$ y = \left\lceil \frac{x+512}{544} \right \rceil $$
+
 #### Considerazioni sulle operazioni in virgola mobile
+Considerato che l'algoritmo del simplesso utilizza numeri in virgola mobile, particolare enfasi va messa sull'arrotondamento dei numeri reali e sul fare meno operazioni possibili per evitare di propagare gli errori.
+
+Inoltre per fare i confronti tra numeri non è possibile utilizzare le classiche espressioni logiche (in virgola mobile due numeri sono considerati uguali se la loro differenza in valore assoluto è minore di un valore $\epsilon$ "piccolo"), questa fattispecie è stata implementata dalla funzione *compare* di macro.h, utilizzando come valore di $\epsilon = 10^{-9}$.
+
+Per quanto riguarda l'aggiornamento del tableau, per effettuare il calcolo $T[i][j] - \frac{C_p[i]}{p}R_p[j]$ viene utilizzata la funzione *fma* della libreria math di CUDA\footnote{Questa funzione riduce calcoli del tipo $A*B+C$ in una sola operazione in virgola mobile}. Il calcolo viene così ridotto a due operazioni in virgola mobile (divisione e fma) invece che tre.
 
 ### Estrazione della soluzione (Algoritmo \ref{alg:simplex}, righe 25-29)
+Per ottenere la soluzione al problema si procede nel seguente modo:
+
+1. Si copia il primo valore del vettore dei costi del tableu per ottenere il valore ottimo della funzione obiettivo,
+
+2. Si istanzia un vettore in mapped memory con gli elementi impostati a 0,
+
+3. Si scansiona il vettore della soluzione di base ottenuta (con lo schema di parallelizzazione già visto in precedenza). Se la variabile considerata non è una variabile slack si legge il valore della variabile dal vettore dei termini noti (ossia la prima riga del tableau).
 
 # Risultati sperimentali
 Al fine di analizzare le prestazioni del solver è stato predisposta una funzione di benchmark con dati generati da un generatore casuale di istanze.
 
-Il benchmark consiste nella risoluzione di una serie di problemi con dimensione crescente a partire da 256 variabili per 256 vincoli a 8192 variabili per 8192 vincoli. Il passo tra un benchmark e l'altro è esponenziale sulle potenze di due.
+Il benchmark consiste nella risoluzione di una serie di problemi con dimensione crescente a partire da 256 variabili per 256 vincoli a 8192 variabili per 8192 vincoli. Il passo tra un problema e l'altro è esponenziale sulle potenze di due.
 
 Per i benchmark il generatore utilizza come seed la dimensione del problema, per cui si andranno
 a generare ogni volta gli stessi problemi. In questo modo è possibile rieseguire il benchmark
@@ -365,6 +409,8 @@ Nonostante il metodo *cudaEventElapsedTime* misuri i tempi in ms, per evitare nu
 
 Come già discusso nel paragrafo \ref{par:complessita} sulla complessità del simplesso, non ha molto senso misurare il tempo globale dell'algoritmo, per cui si è deciso di misurare i tempi delle singole operazioni che lo compongono, in particolare il tempo necessario a svolgere una singola iterazione del ciclo ricerca del pivot-aggiornamento del tableau (algoritmo \ref{alg:simplex} da riga 4 a riga 24), che d'ora in poi chiameremo **ciclo di solve** per semplicità.
 
+La possibilità di misurare i tempi è attivabile compilando il progetto con la macro TIMER.
+
 Tutte le misurazioni vengono salvate su file csv per essere analizzate utilizzando il software R.
 
 ### Occupazione ciclo di solve
@@ -373,9 +419,8 @@ Come accennato durante la spiegazione degli approcci utilizzati per la paralleli
 
 ```{r, echo=FALSE, warning=FALSE}
 ##costruzione dataframes
-mantenere <- c("operation","elapsed_time")
 sequence <- c(256, 512, 1024, 2048, 4096, 8192)
-mx250.solvePercentage <- c(); ##aggiungere qui per altre schede
+mx250.solvePercentageSum <- c() ##aggiungere qui per altre schede
 
 for(var in sequence){
   ####mx 250####
@@ -384,34 +429,33 @@ for(var in sequence){
     filename <- paste(fileLocation, "benchmark_", temp, "_", temp, ".txt", sep = "")
     
     #lettura file
-    currentData <- read.csv(filename)
+    dataset <- read.csv(filename)
     
     #elaborazione file
-    currentData <- subset(currentData, select = mantenere)
-    currentData["operation"][currentData["operation"] == "gauss1" | currentData["operation"] == "gauss2"] <- "gauss"
-    currentData <- aggregate(currentData$elapsed_time, by=list(Category=currentData$operation),FUN=sum)
+    dataset <- subset(dataset, select = c("operation","elapsed_time"))
+    dataset["operation"][dataset["operation"] == "gauss1" | dataset["operation"] == "gauss2"] <- "gauss"
+    currentDataSum <- aggregate(dataset$elapsed_time, by=list(Category=dataset$operation),FUN=sum)
+    currentDataMean <- aggregate(dataset$elapsed_time, by=list(Category=dataset$operation),FUN=mean)
     
     #calcolo percentuale
-    totalTime <- sum(currentData$x)
-    currentData$percentage <- (currentData$x / totalTime) * 100
-    
-    row <-  subset(currentData, Category == "solve")
+    totalTimeSum <- sum(currentDataSum$x)
+    currentDataSum$percentage <- (currentDataSum$x / totalTimeSum) * 100
     
     #salvataggio valore
-    mx250.solvePercentage <- c(mx250.solvePercentage,  row$percentage)
+    mx250.solvePercentageSum <- c(mx250.solvePercentageSum, subset(currentDataSum, Category == "solve")$percentage)
 }
 
-edge <- sequence;
-m250.percentage <- data.frame(edge, mx250.solvePercentage);
+m250.percentage <- data.frame(sequence, mx250.solvePercentageSum);
 
-plot(data = m250.percentage, mx250.solvePercentage~edge, main = "Percentuale di tempo occupata dal ciclo di solve", type = 'b', xlab = "Dimensione lato matrice", ylab = "Percentuale tempo in solve")
+plot(m250.percentage$sequence, m250.percentage$mx250.solvePercentageSum, main = "Percentuale di tempo occupata dal ciclo di solve sul \ntempo totale (MX250)", type = 'o', xlab = "Dimensione lato matrice", ylab = "Percentuale tempo in solve")
 ```
-Come possibile notare dal grafico, per l'esecuzione delle istanze di benchmarking si ha un tempo speso nella esecuzione del ciclo di solving superiore al 99% del tempo totale già per matrici di dimensione 256x256, per cui ad una riduzione della durata di una singola iterazione di tale ciclo corrisponde una riduzione nel tempo di esecuzione e rispettiva risoluzione del problema di partenza.
+Come possibile notare dal grafico, per l'esecuzione delle istanze di benchmarking si ha un tempo speso nella esecuzione del ciclo di solving superiore al 99% del tempo totale già per problemi di dimensione $256\times 256$, per cui ad una riduzione della durata di una singola iterazione di tale ciclo corrisponde una riduzione nel tempo di esecuzione e rispettiva risoluzione del problema di partenza.
 
 ### Analisi in funzione della dimensione del problema
-Dato che il tempo richiesto dall'algorirmo dipende quasi esclusivamente dal tempo totale del ***ciclo di solve*** il centro dell'attenzione in questa analisi viene posto proprio sul tempo medio richiesto per un singolo singolo ciclo.
+Dato che il tempo richiesto dall'algoritmo dipende quasi esclusivamente dal tempo totale del ***ciclo di solve***. 
+Il centro dell'attenzione in questa analisi viene posto proprio sul tempo medio richiesto per un singolo singolo ciclo.
 
-La durata del ciclo dipenderà chiaramente dalla dimensione del problema, che a sua volta dipende da: il numero di variabili ed il numero di vincoli.
+La durata del ciclo dipenderà chiaramente dalla dimensione del problema, che a sua volta dipende dal numero di variabili e dal numero di vincoli.
 
 Il tempo medio richiesto da un singolo ciclo di solve non cresce nello stesso modo all'aumentare delle due dimensioni, come possibile notare dai seguenti grafici tridimensionali:
 
@@ -519,11 +563,12 @@ La differenza nella variazione risulta essere più chiara se si fissa una delle 
  
 ```
 
-La spiegazione di questa caratteristica è da ricercarsi nel funzionamento pratico dell'algoritmo l'algoritmo: durante il ***ciclo di solve*** un passo fondamentale dell'algoritmo è l'aggiornamento del tableu, tale tableu non ha una dimensione pari a "N.Variabili * N.Vincoli", bensì pari a "(N.Variabili + 2 * N.Vincoli) * N.Vincoli" nel caso della fase 1, mentre "(N.Variabili + N.Vincoli) * N.Vincoli" nel caso della fase 2.
+La spiegazione di questa caratteristica è da ricercarsi nel funzionamento pratico dell'algoritmo: durante il ***ciclo di solve*** un passo fondamentale dell'algoritmo è l'aggiornamento del tableu, tale tableu non ha una dimensione pari a $n^{\circ}variabili \times n^{\circ}vincoli$, bensì pari a $(n^{\circ}variabili + 2n^{\circ}vincoli) \times n^{\circ}vincoli$ nel caso della fase 1, mentre $(n^{\circ}variabili + n^{\circ}vincoli) \times n^{\circ}vincoli$ nel caso della fase 2.
 
 Si ha di conseguenza un incremento quadratico nel numero di aggiornamenti da fare all'aumentare dei vincoli ma solo lineare all'aumentare delle variabili.
 
-Un ulteriore grafico interessante che mette ancora di più in evidenza questa caratteristica è quello che mette in relazione il tempo medio per ciclo di solve alla dimensione del problema, quest'ultima calcolata come "N.Variabili * N.Vincoli". 
+<!-- PARTE DA SPIEGARE MEGLIO! -->
+Un ulteriore grafico interessante che mette ancora di più in evidenza questa caratteristica è quello che mette in relazione il tempo medio per ciclo di solve alla dimensione del problema, quest'ultima calcolata come $n^{\circ}variabili \times n^{\circ}vincoli$. 
 
 ```{r, echo=FALSE, warning=FALSE}
 
@@ -535,16 +580,13 @@ Un ulteriore grafico interessante che mette ancora di più in evidenza questa ca
   phaseTwoMean_ElemNumber$cells <- phaseTwoMean_ElemNumber$constraints * phaseTwoMean_ElemNumber$vars
   
   par(mfrow=c(1,2))
-  
   plot(data = phaseOneMean_ElemNumber, values~cells, main = "Fase 1")
+  points(phaseTwoMean_ElemNumber$cells, phaseTwoMean_ElemNumber$values, col="red")
   plot(data = phaseTwoMean_ElemNumber, values~cells, main = "Fase 2")
-  
   par(mfrow=c(1,1))
- 
 ```
 
-Dal grafico è possibile notare come a stessa dimensione corrispondono tempi medi molto diversi tra di loro, confermando di fatto che il tempo necessario per un singolo ciclo di solve scala diversamente per le due dimensioni, dato che se così non fosse non si dovrebbero notare eccessive differenze di tempo medio a parità di dimensione del problema.
-
+Dai grafici è possibile notare come a stessa dimensione corrispondono tempi medi molto diversi tra di loro, confermando di fatto che il tempo necessario per un singolo ciclo di solve scala diversamente per le due dimensioni, dato che se così non fosse non si dovrebbero notare eccessive differenze di tempo medio a parità di dimensione del problema.
 
 ### Analisi in funzione della dimensione reale
 
@@ -655,16 +697,21 @@ Se si mette in relazione il tempo medio per ***ciclo di solve*** con il numero d
   par(mfrow=c(1,1))
 ```
 
-Si nota come il tempo medio necessario per ciclo di solve sembra crescere linearmente all'aumentare della dimensione effettiva del tableu.
+Si nota come il tempo medio necessario per ciclo di solve sembra cresce linearmente all'aumentare della dimensione effettiva del tableu.
 
 ## Confronti tra diverse gpu
-Questa sezione si analizzerà come l'algoritmo scala utilizzando diverse gpu con diverse con diverse caratteristiche e performance.
+Questa sezione si analizzerà come l'algoritmo scala utilizzando 2 gpu con diverse con diverse caratteristiche e performance:
 
-### Gpu utilizzate
-Per analizzare come il problema scala in base alla gpu sono state confrontati i risultati ottenuti con una "mx 250" ed una "rtx 2070 super" utilizzando il benchmark già descritto in precedenza.
+<!-- Inserire qualche informazione in più sulle schede (Architettura, n° di stream multiprocessor, ecc...) -->
+
+- Geforce MX250 
+
+- Geforce RTX 2070 Super
 
 ### Confronto risultati
-Dato che il tempo medio per ciclo di solve dipende principalmente dalla dimensione reale del tableu i confronti tra schede diverse verranno effettuati in base a tale parametro, visto inoltre che questa varia in base alla fase in cui ci si trova solo una delle due verrà presa in considerazione, in particolare si è scelta la fase 1 visto il maggiore numero di cicli che eseguiti che permettono di ottenere dei tempi medi più attendibili. <!--  forse dato che si utilizza la dimensione effettiva si potrebbe unire fase 1 e 2 -->
+Dato che il tempo medio per ciclo di solve dipende principalmente dalla dimensione reale del tableu i confronti tra schede diverse verranno effettuati in base a tale parametro. 
+
+Visto inoltre che questa varia in base alla fase in cui ci si trova solo una delle due verrà presa in considerazione, in particolare si è scelta la fase 1 per via del maggiore numero di cicli eseguiti che permettono di ottenere dei tempi medi più attendibili. <!--  forse dato che si utilizza la dimensione effettiva si potrebbe unire fase 1 e 2 -->
 
 <!-- tempo medio in funzione della dimensione reale del tableu con più schede -->
 ```{r, echo=FALSE}
@@ -735,54 +782,7 @@ plot(data = mx250.means, values~cells, main = "Tempo medio per singolo ciclo di 
 points(data = rtx2070super.means, values~cells, col = "green")
 abline(mx250.lm, col = "black")
 abline(rtx2070super.lm, col = "green")
-legend("topleft", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
-
-###roba vecchia
-# mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
-# mx250_2048 <- read.csv("./../data/measures/mx250/mx250_2048.txt")
-# mx250_4096 <- read.csv("./../data/measures/mx250/mx250_4096.txt")
-# mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
-# rtx3070_1024 <- read.csv("./../data/measures/rtx3070/rtx3070_1024.txt")
-# rtx3070_2048 <- read.csv("./../data/measures/rtx3070/rtx3070_2048.txt")
-# rtx3070_4096 <- read.csv("./../data/measures/rtx3070/rtx3070_4096.txt")
-# rtx3070_8192 <- read.csv("./../data/measures/rtx3070/rtx3070_8192.txt")
-# times_mx250_1024 <- subset(mx250_1024, vars == "3073" & operation == "solve")
-# times_mx250_2048 <- subset(mx250_2048, vars == "6145" & operation == "solve")
-# times_mx250_4096 <- subset(mx250_4096, vars == "12289" & operation == "solve")
-# times_mx250_8192 <- subset(mx250_8192, vars == "24577" & operation == "solve")
-# times_rtx3070_1024 <- subset(rtx3070_1024, vars == "3073" & operation == "solve")
-# times_rtx3070_2048 <- subset(rtx3070_2048, vars == "6145" & operation == "solve")
-# times_rtx3070_4096 <- subset(rtx3070_4096, vars == "12289" & operation == "solve")
-# times_rtx3070_8192 <- subset(rtx3070_8192, vars == "24577" & operation == "solve")
-# ############ 1024 ##########
-# dta_A <- mean(times_mx250_1024$elapsed_time)
-# dta_B <- mean(times_rtx3070_1024$elapsed_time)
-# mx250_Data <- dta_A
-# rtx3070_Data <- dta_B
-# ############ 2048 ##########
-# dta_A <- mean(times_mx250_2048$elapsed_time)
-# dta_B <- mean(times_rtx3070_2048$elapsed_time)
-# mx250_Data <- c(mx250_Data, dta_A)
-# rtx3070_Data <- c(rtx3070_Data, dta_B)
-# ############ 4096 ##########
-# dta_A <- mean(times_mx250_4096$elapsed_time)
-# dta_B <- mean(times_rtx3070_4096$elapsed_time)
-# mx250_Data <- c(mx250_Data, dta_A)
-# rtx3070_Data <- c(rtx3070_Data, dta_B)
-# ########### 8192 ###########
-# dta_A <- mean(times_mx250_8192$elapsed_time)
-# dta_B <- mean(times_rtx3070_8192$elapsed_time)
-# mx250_Data <- c(mx250_Data, dta_A)
-# rtx3070_Data <- c(rtx3070_Data, dta_B)
-# #### preparazione dataframes ####
-# edge <- c(1024,2048,4096,8192)
-# mx250_Data <- data.frame(mx250_Data, edge)
-# rtx3070_Data <- data.frame(rtx3070_Data, edge)
-# colnames(mx250_Data) <- c("time", "edge")
-# colnames(rtx3070_Data) <- c("time", "edge")
-# plot(data = mx250_Data, time~edge, main = "Tempo per singolo ciclo di solve", type = 'b', xlab = "Dimensione lato matrice", ylab = "Tempo per ciclo", col = "black")
-# lines(data = rtx3070_Data, time~edge, type = 'b', col = "green")
-# legend("topleft", c("mx250", "rtx 3070"), lty = c(1,1), col = c("black", "green"))
+legend("topleft", c("MX250", "RTX2070 Super"), lty = c(1,1), col = c("black", "green"))
 ```
 
 Dal grafico è chiaro come il tempo necessario per ***ciclo di solve*** cresca diversamente per le due schede.
@@ -824,9 +824,9 @@ difference <- data.frame(cells, difference);
 ratio <- data.frame(cells, ratio);
 
 par(mfrow = c(1,1))
-plot(data = difference, difference~cells  , col = "black", main = "Differenza di tempo medio per ciclo di solve tra mx250 e rtx2070_super")
+plot(data = difference, difference~cells  , col = "black", main = "Differenza di tempo medio per ciclo di solve tra \nMX250 e RTX2070 Super")
 lines(lowess( difference$cells, difference$difference), col = "green", lwd = .5)
-plot(data = ratio, ratio~cells  , col = "black", main = "Rapporto tra tempo medio per ciclo di solve tra mx250 e rtx2070_super")
+plot(data = ratio, ratio~cells  , col = "black", main = "Rapporto tra tempo medio per ciclo di solve tra \nMX250 e RTX2070 Super")
 lines(lowess( ratio$cells, ratio$ratio, f = .85), col = "green", lwd = .5)
 ratioFunction <- function(x){
       ((mx250.lm$coefficients[1] + mx250.lm$coefficients[2] * x)/
@@ -841,24 +841,9 @@ par(mfrow = c(1,1))
  difference_8192 <- 0
  rapporto_1024 <- 0
  rapporto_8192 <- 0
- 
-# mx250_1024 <- read.csv("./../data/measures/mx250/mx250_1024.txt")
-# mx250_8192 <- read.csv("./../data/measures/mx250/mx250_8192.txt")
-# rtx3070_1024 <- read.csv("./../data/measures/rtx3070/rtx3070_1024.txt")
-# rtx3070_8192 <- read.csv("./../data/measures/rtx3070/rtx3070_8192.txt")
-# 
-# mx250_1024 <- subset(mx250_1024, vars == "3073" & operation == "solve")
-# mx250_8192 <- subset(mx250_8192, vars == "24577" & operation == "solve")
-# rtx3070_1024 <- subset(rtx3070_1024, vars == "3073" & operation == "solve")
-# rtx3070_8192 <- subset(rtx3070_8192, vars == "24577" & operation == "solve")
-# 
- # difference_1024 <- mean(mx250_1024$elapsed_time)-mean(rtx3070_1024$elapsed_time)
- # difference_8192 <- mean(mx250_8192$elapsed_time)-mean(rtx3070_8192$elapsed_time)
- # rapporto_1024 <- mean(mx250_1024$elapsed_time)/mean(rtx3070_1024$elapsed_time)
- # rapporto_8192 <- mean(mx250_8192$elapsed_time)/mean(rtx3070_8192$elapsed_time)
 ```
 
-Dal primo grafico è possibile notare come la differenza di tempo medio tra la mx250 e la rtx2070super cresca limearmente all'aumentare della dimensione effettiva del problema, ovvero all'aumentare della dimensione di celle effettive del tableu, passando da `r round(difference_256x256/1000, digits = 2)`ms nel caso di problemi di dimensione 256x256 a `r round(difference_8192x8192/1000, digits = 2)`ms per quelli di dimensione 8192x8192.
+Dal primo grafico è possibile notare come la differenza di tempo medio tra la MX250 e la RTX2070 Super cresca limearmente all'aumentare della dimensione effettiva del problema, ovvero all'aumentare della dimensione di celle effettive del tableu, passando da `r round(difference_256x256/1000, digits = 2)`ms nel caso di problemi di dimensione 256x256 a `r round(difference_8192x8192/1000, digits = 2)`ms per quelli di dimensione 8192x8192.
 
 Si può notare dal secondo grafico come il rapporto tra tempo medio tra le due schede tende ad aumentare seguendo una andamento iperbolico (in rosso l'iperbole ottenuta rapportando la retta di regressione per i tempi delle due schede video), per problemi piccoli si ha infatti che il rapporto tra il tempo della rtx 2070 e della mx250 risulta essere molto basso, ovvero nel caso del problema di dimensione 256x256 di `r round(ratio_256x256, digits = 2)` (basso perchè sembrerebbe che la 2070 super sia solo `r round(ratio_256x256, digits = 2)`x migliore della mx 250), cresce però molto velocemente per poi stabilizzarsi intorno a `r round(ratio_8192x8192, digits = 2)` per problemi più grandi
 
@@ -866,7 +851,7 @@ Si può concludere che la nostra soluzione permetta di sfruttare al meglio le sc
 
 <!-- Infatti per problemi di dimensione 1024x1024 si ha che una rtx3070 risulta utilizzare in media `r round(difference_1024/1000, digits = 2)`ms in meno della mx250, differenza che raggiunge i `r round(difference_8192/1000, digits=2)`ms nel caso di un problema di dimensione 8192x8192. La maggiore efficienza della rtx 3070 passa da `r round(rapporto_1024, digits = 1)`x rispetto alla mx 250 per un problema 1024x1024 a `r round(rapporto_8192, digits = 1)`x nel caso di un problema 8192x8192. -->
 
-### tempo medio solve a confronto
+### Tempo medio solve a confronto
 <!-- qui meglio decidere quali tenere e quali no, magari solo alcuni, che altrimenti non viene benissimo -->
 ```{r, echo=FALSE}
 mx250_256 <- read.csv("./../data/measures/mx250_2/benchmark_256_256.txt")
@@ -897,49 +882,46 @@ times_rtx2070super_2048 <- subset(rtx2070super_2048, vars == "6145" & operation 
 times_rtx2070super_4096 <- subset(rtx2070super_4096, vars == "12289" & operation == "solve")
 times_rtx2070super_8192 <- subset(rtx2070super_8192, vars == "24577" & operation == "solve")
 
-par(mfrow=c(2,2))
-
+par(oma = c(4,1,1,1), mfrow = c(2, 3), mar = c(5, 4, 1, 1))
 ############ 256 ##########
 dta_A <- density(times_mx250_256$elapsed_time, na.rm = TRUE)
 dta_B <- density(times_rtx2070super_256$elapsed_time, na.rm = TRUE)
 plot(dta_A, col = "black", main = "Matrice 256x256", xlim = c(0,1500), ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
-legend("topright", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
 
 ############ 512 ##########
 dta_A <- density(times_mx250_512$elapsed_time, na.rm = TRUE)
 dta_B <- density(times_rtx2070super_512$elapsed_time, na.rm = TRUE)
 plot(dta_A, col = "black", main = "Matrice 512x512", xlim = c(0,2000), ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
-legend("topright", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
 
 ############ 1024 ##########
 dta_A <- density(times_mx250_1024$elapsed_time, na.rm = TRUE)
 dta_B <- density(times_rtx2070super_1024$elapsed_time, na.rm = TRUE)
 plot(dta_A, col = "black", main = "Matrice 1024x1024", xlim = c(0,6000), ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
-legend("topright", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
 
 ############ 2048 ##########
 dta_A <- density(times_mx250_2048$elapsed_time, na.rm = TRUE)
 dta_B <- density(times_rtx2070super_2048$elapsed_time, na.rm = TRUE)
 plot(dta_A, col = "black", main = "Matrice 2048x2048", xlim = c(0,18000), ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
-legend("topright", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
 
 ############ 4096 ##########
 dta_A <- density(times_mx250_4096$elapsed_time, na.rm = TRUE)
 dta_B <- density(times_rtx2070super_4096$elapsed_time, na.rm = TRUE)
 plot(dta_A, col = "black", main = "Matrice 4096x4096", xlim = c(0,75000), ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
-legend("topright", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
 
 ########### 8192 ###########
 dta_A <- density(times_mx250_8192$elapsed_time, na.rm = TRUE)
 dta_B <- density(times_rtx2070super_8192$elapsed_time, na.rm = TRUE)
 plot(dta_A, col = "black", main = "Matrice 8192x8192", xlim = c(0,350000), ylim = c(0, max(dta_A$y, dta_B$y)))
 lines(dta_B, col = "green")
-legend("topright", c("mx250", "rtx 2070 super"), lty = c(1,1), col = c("black", "green"))
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
+
+plot(0, 0, type = 'l', bty = 'n', xaxt = 'n', yaxt = 'n')
+legend("bottom", c("mx250", "rtx 2070 super"), col = c("black", "green"), lwd = 5, xpd = TRUE, horiz = TRUE, cex = 1, seg.len=1, bty = 'n')
 ```
 
 Attraverso questi grafici si può notare come il tempo per la il ***ciclo di solve*** sia distribuito per le due schede video, si nota ovviamente una distribuzione di tempi inferiori per la 2070 super rispetto alla mx250.
@@ -948,4 +930,4 @@ Si può notare anche un comportamento anomalo nella distribuzione dei tempi, inf
 
 La causa sembra essere dovuta ad una variazione del tempo di esecuzione del kernel di aggiornamento del tableu ma il motivo di tale variazione non è stato possibile da individuare.
 
-
+# Conclusioni
