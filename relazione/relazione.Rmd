@@ -364,7 +364,7 @@ Per distinguere le due fasi senza dover riscrivere due volte la stessa funzione 
 ### Verifica di unbounding (Algoritmo \ref{alg:simplex}, riga 6)
 Per verificare se il problema è unbounded si deve verificare che tutti i valori del vettore della variabile che sta per entrare in base siano minori o uguali a 0. 
 
-Per fare ciò è stata implementata una reduction (sempre intra-warp a due fasi perchè non esiste *atomicMax* per i valori double) per ottenere il valore massimo di un vettore. Se il valore massimo di un vettore è $\leq 0$, allora devono per forza esserlo anche tutti gli altri.
+Per fare ciò è stata implementata una reduction (sempre intra-warp a due fasi perché non esiste *atomicMax* per i valori double) per ottenere il valore massimo di un vettore. Se il valore massimo di un vettore è $\leq 0$, allora devono per forza esserlo anche tutti gli altri.
 
 Le procedure di reduction utilizzano copie dei vettori passati come parametri.
 
@@ -388,7 +388,7 @@ Per quanto riguarda l'aggiornamento del tableau, per effettuare il calcolo $T[i]
 ### Estrazione della soluzione (Algoritmo \ref{alg:simplex}, righe 25-29)
 Per ottenere la soluzione al problema si procede nel seguente modo:
 
-1. Si copia il primo valore del vettore dei costi del tableu per ottenere il valore ottimo della funzione obiettivo,
+1. Si copia il primo valore del vettore dei costi del tableau per ottenere il valore ottimo della funzione obiettivo,
 
 2. Si istanzia un vettore in mapped memory con gli elementi impostati a 0,
 
@@ -563,7 +563,7 @@ La differenza nella variazione risulta essere più chiara se si fissa una delle 
  
 ```
 
-La spiegazione di questa caratteristica è da ricercarsi nel funzionamento pratico dell'algoritmo: durante il ***ciclo di solve*** un passo fondamentale dell'algoritmo è l'aggiornamento del tableu, tale tableu non ha una dimensione pari a $n^{\circ}variabili \times n^{\circ}vincoli$, bensì pari a $(n^{\circ}variabili + 2n^{\circ}vincoli) \times n^{\circ}vincoli$ nel caso della fase 1, mentre $(n^{\circ}variabili + n^{\circ}vincoli) \times n^{\circ}vincoli$ nel caso della fase 2.
+La spiegazione di questa caratteristica è da ricercarsi nel funzionamento pratico dell'algoritmo: durante il ***ciclo di solve*** un passo fondamentale dell'algoritmo è l'aggiornamento del tableau, tale tableau non ha una dimensione pari a $n^{\circ}variabili \times n^{\circ}vincoli$, bensì pari a $(n^{\circ}variabili + 2n^{\circ}vincoli) \times n^{\circ}vincoli$ nel caso della fase 1, mentre $(n^{\circ}variabili + n^{\circ}vincoli) \times n^{\circ}vincoli$ nel caso della fase 2.
 
 Si ha di conseguenza un incremento quadratico nel numero di aggiornamenti da fare all'aumentare dei vincoli ma solo lineare all'aumentare delle variabili.
 
@@ -580,7 +580,7 @@ Un ulteriore grafico interessante che mette ancora di più in evidenza questa ca
   phaseTwoMean_ElemNumber$cells <- phaseTwoMean_ElemNumber$constraints * phaseTwoMean_ElemNumber$vars
   
   par(mfrow=c(1,2))
-  plot(data = phaseOneMean_ElemNumber, values~cells, main = "Fase 1")
+  plot(data = phaseOneMean_ElemNumber, log(values)~log(cells), main = "Fase 1")
   points(phaseTwoMean_ElemNumber$cells, phaseTwoMean_ElemNumber$values, col="red")
   plot(data = phaseTwoMean_ElemNumber, values~cells, main = "Fase 2")
   par(mfrow=c(1,1))
@@ -590,7 +590,7 @@ Dai grafici è possibile notare come a stessa dimensione corrispondono tempi med
 
 ### Analisi in funzione della dimensione reale
 
-Partendo dalle considerazioni effettuate precedentemente è possibile procedere ad analizzare il tempo medio per ciclo di solve in base alla dimensione del tableu utilizzato per la risoluzione.
+Partendo dalle considerazioni effettuate precedentemente è possibile procedere ad analizzare il tempo medio per ciclo di solve in base alla dimensione del tableau utilizzato per la risoluzione.
 
 ```{r, echo=FALSE, warning=FALSE}
 
@@ -686,18 +686,18 @@ Se si mette in relazione il tempo medio per ***ciclo di solve*** con il numero d
   phaseOneMean_ElemNumber$cells <- phaseOneMean_ElemNumber$constraints * phaseOneMean_ElemNumber$trueVars
   phaseTwoMean_ElemNumber$cells <- phaseTwoMean_ElemNumber$constraints * phaseTwoMean_ElemNumber$trueVars
   
-  linearModelPhaseOne <- lm(data = phaseOneMean_ElemNumber, values~cells)
+  linearModelPhaseOne <- lm(data = phaseOneMean_ElemNumber, log(values)~log(cells))
   linearModelPhaseTwo <- lm(data = phaseTwoMean_ElemNumber, values~cells)
   
   par(mfrow=c(1,2))
-  plot(data = phaseOneMean_ElemNumber, values~cells, main = "Fase 1")
+  plot(data = phaseOneMean_ElemNumber, log(values)~log(cells), main = "Fase 1")
   abline(linearModelPhaseOne, col = "green")
   plot(data = phaseTwoMean_ElemNumber, values~cells, main = "Fase 2")
   abline(linearModelPhaseTwo, col = "green")
   par(mfrow=c(1,1))
 ```
 
-Si nota come il tempo medio necessario per ciclo di solve sembra cresce linearmente all'aumentare della dimensione effettiva del tableu.
+Si nota come il tempo medio necessario per ciclo di solve sembra cresce linearmente all'aumentare della dimensione effettiva del tableau.
 
 ## Confronti tra diverse gpu
 Questa sezione si analizzerà come l'algoritmo scala utilizzando 2 gpu con diverse con diverse caratteristiche e performance:
@@ -709,11 +709,11 @@ Questa sezione si analizzerà come l'algoritmo scala utilizzando 2 gpu con diver
 - Geforce RTX 2070 Super
 
 ### Confronto risultati
-Dato che il tempo medio per ciclo di solve dipende principalmente dalla dimensione reale del tableu i confronti tra schede diverse verranno effettuati in base a tale parametro. 
+Dato che il tempo medio per ciclo di solve dipende principalmente dalla dimensione reale del tableau i confronti tra schede diverse verranno effettuati in base a tale parametro. 
 
 Visto inoltre che questa varia in base alla fase in cui ci si trova solo una delle due verrà presa in considerazione, in particolare si è scelta la fase 1 per via del maggiore numero di cicli eseguiti che permettono di ottenere dei tempi medi più attendibili. <!--  forse dato che si utilizza la dimensione effettiva si potrebbe unire fase 1 e 2 -->
 
-<!-- tempo medio in funzione della dimensione reale del tableu con più schede -->
+<!-- tempo medio in funzione della dimensione reale del tableau con più schede -->
 ```{r, echo=FALSE}
 mx250.means <- c()
 rtx2070super.means <- c()
@@ -722,15 +722,13 @@ constraints <- c()
 trueVarsPhaseOne <- c()
 
 values <- c(256, 512, 1024, 2048, 4096, 8192)
-for(var in values){               ##usiamo un for per caricarli tutti
+for(var in values){               # usiamo un for per caricarli tutti
   for(constraint in values){
     
     constraints <- c(constraints, constraint)
     vars <- c(vars, var)
     
-    
     #mx250
-    
       ##composizione nome file
       temp1 <- format(var)
       temp2 <- format(constraint)
@@ -743,8 +741,7 @@ for(var in values){               ##usiamo un for per caricarli tutti
       currentData <- subset(currentData, vars == variables & operation == "solve")
       mx250.means <- c(mx250.means, mean(currentData$elapsed_time))
       
-    #mx250
-    
+    #rtx2070
       ##composizione nome file
       temp1 <- format(var)
       temp2 <- format(constraint)
@@ -775,11 +772,11 @@ mx250.means$cells <- mx250.means$constraints * mx250.means$trueVars
 rtx2070super.means$cells <- rtx2070super.means$constraints * rtx2070super.means$trueVars
 
 ##inseriamo la linea di regressione
-mx250.lm <- lm(data = mx250.means, values~cells)
-rtx2070super.lm <- lm(data = rtx2070super.means, values~cells)
+mx250.lm <- lm(data = mx250.means, log(values)~log(cells))
+rtx2070super.lm <- lm(data = rtx2070super.means, log(values)~log(cells))
 
-plot(data = mx250.means, values~cells, main = "Tempo medio per singolo ciclo di solve in fase 1", xlab = "numero di elementi del tableu", ylab = "Tempo per ciclo", col = "black")
-points(data = rtx2070super.means, values~cells, col = "green")
+plot(data = mx250.means, log(values)~log(cells), main = "Tempo medio per singolo ciclo di solve in fase 1", xlab = "numero di elementi del tableau", ylab = "Tempo per ciclo", col = "black")
+points(data = rtx2070super.means, log(values)~log(cells), col = "green")
 abline(mx250.lm, col = "black")
 abline(rtx2070super.lm, col = "green")
 legend("topleft", c("MX250", "RTX2070 Super"), lty = c(1,1), col = c("black", "green"))
@@ -791,6 +788,10 @@ Si può anche notare come la differenza di tempo speso per ***ciclo di solve*** 
 ```{r, echo=FALSE}
 
 #salviamo per poter modificare
+
+mx250.lm <- lm(data = mx250.means, values~cells)
+rtx2070super.lm <- lm(data = rtx2070super.means, values~cells)
+
 diff_mx250 <- mx250.means
 diff_rtx2070super <- rtx2070super.means
 
@@ -824,8 +825,8 @@ difference <- data.frame(cells, difference);
 ratio <- data.frame(cells, ratio);
 
 par(mfrow = c(1,1))
-plot(data = difference, difference~cells  , col = "black", main = "Differenza di tempo medio per ciclo di solve tra \nMX250 e RTX2070 Super")
-lines(lowess( difference$cells, difference$difference), col = "green", lwd = .5)
+plot(data = difference, log(difference)~log(cells)  , col = "black", main = "Differenza di tempo medio per ciclo di solve tra \nMX250 e RTX2070 Super")
+lines(lowess( log(difference$cells), log(difference$difference)), col = "green", lwd = .5)
 plot(data = ratio, ratio~cells  , col = "black", main = "Rapporto tra tempo medio per ciclo di solve tra \nMX250 e RTX2070 Super")
 lines(lowess( ratio$cells, ratio$ratio, f = .85), col = "green", lwd = .5)
 ratioFunction <- function(x){
@@ -843,13 +844,11 @@ par(mfrow = c(1,1))
  rapporto_8192 <- 0
 ```
 
-Dal primo grafico è possibile notare come la differenza di tempo medio tra la MX250 e la RTX2070 Super cresca limearmente all'aumentare della dimensione effettiva del problema, ovvero all'aumentare della dimensione di celle effettive del tableu, passando da `r round(difference_256x256/1000, digits = 2)`ms nel caso di problemi di dimensione 256x256 a `r round(difference_8192x8192/1000, digits = 2)`ms per quelli di dimensione 8192x8192.
+Dal primo grafico è possibile notare come la differenza di tempo medio tra la MX250 e la RTX2070 Super cresca linearmente all'aumentare della dimensione effettiva del problema, ovvero all'aumentare della dimensione di celle effettive del tableau, passando da `r round(difference_256x256/1000, digits = 2)`ms nel caso di problemi di dimensione $256\times 256$ a `r round(difference_8192x8192/1000, digits = 2)`ms per quelli di dimensione $8192\times 8192$.
 
-Si può notare dal secondo grafico come il rapporto tra tempo medio tra le due schede tende ad aumentare seguendo una andamento iperbolico (in rosso l'iperbole ottenuta rapportando la retta di regressione per i tempi delle due schede video), per problemi piccoli si ha infatti che il rapporto tra il tempo della rtx 2070 e della mx250 risulta essere molto basso, ovvero nel caso del problema di dimensione 256x256 di `r round(ratio_256x256, digits = 2)` (basso perchè sembrerebbe che la 2070 super sia solo `r round(ratio_256x256, digits = 2)`x migliore della mx 250), cresce però molto velocemente per poi stabilizzarsi intorno a `r round(ratio_8192x8192, digits = 2)` per problemi più grandi
+Si può notare dal secondo grafico come il rapporto tra tempo medio tra le due schede tende ad aumentare seguendo una andamento iperbolico (in rosso l'iperbole ottenuta rapportando la retta di regressione per i tempi delle due schede video), per problemi piccoli si ha infatti che il rapporto tra il tempo della RTX2070 e della MX250 risulta essere molto basso, ovvero nel caso del problema di dimensione $256\times 256$ di `r round(ratio_256x256, digits = 2)` (basso perché sembrerebbe che la 2070 super sia solo `r round(ratio_256x256, digits = 2)`x migliore della MX250), cresce però molto velocemente per poi stabilizzarsi intorno a `r round(ratio_8192x8192, digits = 2)` per problemi più grandi
 
 Si può concludere che la nostra soluzione permetta di sfruttare al meglio le schede con caratteristiche hardware migliori solo per problemi sufficientemente grandi, per problemi piccoli invece i dati mostrano un miglioramento non eccessivamente elevato.
-
-<!-- Infatti per problemi di dimensione 1024x1024 si ha che una rtx3070 risulta utilizzare in media `r round(difference_1024/1000, digits = 2)`ms in meno della mx250, differenza che raggiunge i `r round(difference_8192/1000, digits=2)`ms nel caso di un problema di dimensione 8192x8192. La maggiore efficienza della rtx 3070 passa da `r round(rapporto_1024, digits = 1)`x rispetto alla mx 250 per un problema 1024x1024 a `r round(rapporto_8192, digits = 1)`x nel caso di un problema 8192x8192. -->
 
 ### Tempo medio solve a confronto
 <!-- qui meglio decidere quali tenere e quali no, magari solo alcuni, che altrimenti non viene benissimo -->
@@ -924,10 +923,10 @@ plot(0, 0, type = 'l', bty = 'n', xaxt = 'n', yaxt = 'n')
 legend("bottom", c("mx250", "rtx 2070 super"), col = c("black", "green"), lwd = 5, xpd = TRUE, horiz = TRUE, cex = 1, seg.len=1, bty = 'n')
 ```
 
-Attraverso questi grafici si può notare come il tempo per la il ***ciclo di solve*** sia distribuito per le due schede video, si nota ovviamente una distribuzione di tempi inferiori per la 2070 super rispetto alla mx250.
+Attraverso questi grafici si può notare come il tempo per la il ***ciclo di solve*** sia distribuito per le due schede video, si nota ovviamente una distribuzione di tempi inferiori per la RTX2070 Super rispetto alla MX250.
 
 Si può notare anche un comportamento anomalo nella distribuzione dei tempi, infatti invece che avere una distribuzione gaussiana attorno ad un unico valore medio si ottengono due picchi, questo avviene indipendentemente dalla dimensione del problema utilizzato e dalla scheda utilizzata.
 
-La causa sembra essere dovuta ad una variazione del tempo di esecuzione del kernel di aggiornamento del tableu ma il motivo di tale variazione non è stato possibile da individuare.
+La causa sembra essere dovuta ad una variazione del tempo di esecuzione del kernel di aggiornamento del tableau ma il motivo di tale variazione non è stato possibile da individuare.
 
 # Conclusioni
