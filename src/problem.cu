@@ -130,10 +130,12 @@ problem_t *readRandomProblemFromFile(FILE *file)
     int nVars = 0;
     int nConstraints = 0;
     unsigned int seed = 0;
+    int min;
+    int max;
 
-    fscanf(file, "%d %d %u", &nVars, &nConstraints, &seed);
+    fscanf(file, "%d %d %u %d %d", &nVars, &nConstraints, &seed, &min, &max);
 
-    return generateRandomProblem(nVars, nConstraints, seed);
+    return generateRandomProblem(nVars, nConstraints, seed, min, max);
 }
 
 void printProblemToStream(FILE *Stream, problem_t *problem)

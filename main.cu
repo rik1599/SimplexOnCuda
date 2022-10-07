@@ -4,6 +4,9 @@
 #include "twoPhaseMethod.h"
 #include "macro.h"
 
+#define MIN -100
+#define MAX +100
+
 void setupDevice();
 problem_t *randomInput(int vars, int contraints, int seed);
 void saveRandomInput(int vars, int constraints, int seed);
@@ -132,7 +135,7 @@ void setupDevice()
 problem_t *randomInput(int vars, int constraints, int seed)
 {
     printf("Generating random problem with %d variables, %d contraints with seed: %d\n", vars, constraints, seed);
-    return generateRandomProblem(vars, constraints, seed, -100, +100);
+    return generateRandomProblem(vars, constraints, seed, MIN, MAX);
 }
 
 void saveRandomInput(int vars, int constraints, int seed)
@@ -145,6 +148,6 @@ void saveRandomInput(int vars, int constraints, int seed)
     char fileName[50];
     sprintf(fileName, "..\\data\\examples\\random_%s.txt", time_str);
     FILE *saveFile = openFile(fileName, "w");
-    fprintf(saveFile, "%d %d %d", vars, constraints, seed);
+    fprintf(saveFile, "%d %d %d %d %d", vars, constraints, seed, MIN, MAX);
     fclose(saveFile);
 }
