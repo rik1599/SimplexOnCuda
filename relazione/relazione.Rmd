@@ -152,7 +152,9 @@ $x[0..n-1] \gets 0$\;
 #### Complessità \label{par:complessita}
 Considerando che l'algoritmo non fa altro che esplorare le soluzioni di base ammissibili, l'algoritmo esplora al massimo $O\binom{n + m}{m}$ (con $n$ numero di variabili e $m$ il numero di vincoli).
 
-Nei casi peggiori il simplesso può raggiungere complessità esponenziali. Tuttavia nel corso degli anni si è visto EMPIRICAMENTE come questa complessità venga raggiunta in pochissimi casi specifici, anzi l'algoritmo si è rivelato molto efficiente su problemi "reali", dove in media raggiunge una complessità nell'ordine di $O(mn)$, anche a confronto con altri algoritmi di soluzione (polinomiali per costruzione) come il metodo dei punti interni.
+Nei casi peggiori il simplesso può raggiungere complessità esponenziali. Tuttavia nel corso degli anni si è visto EMPIRICAMENTE come questa complessità venga raggiunta in pochissimi casi specifici, anzi l'algoritmo si è rivelato molto efficiente su problemi "reali", dove in media raggiunge una complessità nell'ordine di $\Theta(mn)$ (l'algoritmo visita un numero di vertici polinomiale rispetto alla dimensione del problema), anche a confronto con altri algoritmi di soluzione (polinomiali per costruzione) come il metodo dei punti interni.
+
+Si noti che $\Theta(mn)$ è anche la complessità di un singolo aggiornamento del tableau (l'algoritmo deve aggiornare TUTTI gli elementi della matrice).
 
 Da queste considerazioni si può concludere anche come la complessità del simplesso dipenda molto dall'istanza del problema fornito in input.
 
@@ -377,6 +379,8 @@ Per lo schema di parallelizzazione è stato utilizzato lo schema visto a lezione
 Per quanto riguarda la grid si è visto che per una matrice di $8192 \times 8192$ elementi e dati dei blocchi da $32\times 32$ thread, dal punto di vista delle prestazioni la grid migliore è risultata essere quella da $16\times 16$ blocchi.
 
 Prendendo in considerazione che per una matrice da $32 \times 32$ elementi il pattern migliore è quello che ad ogni thread assegna un valore, per calcolare il numero di blocchi necessari data una dimensione della matrice è stata calcolata una retta tra i punti $(1,32)$ e $(8192,16)$ ottenendo così l'equazione $$ y = \left\lceil \frac{x+512}{544} \right \rceil $$
+
+
 
 #### Considerazioni sulle operazioni in virgola mobile
 Considerato che l'algoritmo del simplesso utilizza numeri in virgola mobile, particolare enfasi va messa sull'arrotondamento dei numeri reali e sul fare meno operazioni possibili per evitare di propagare gli errori.
@@ -846,7 +850,7 @@ par(mfrow = c(1,1))
 
 Dal primo grafico è possibile notare come la differenza di tempo medio tra la MX250 e la RTX2070 Super cresca linearmente all'aumentare della dimensione effettiva del problema, ovvero all'aumentare della dimensione di celle effettive del tableau, passando da `r round(difference_256x256/1000, digits = 2)`ms nel caso di problemi di dimensione $256\times 256$ a `r round(difference_8192x8192/1000, digits = 2)`ms per quelli di dimensione $8192\times 8192$.
 
-Si può notare dal secondo grafico come il rapporto tra tempo medio tra le due schede tende ad aumentare seguendo una andamento iperbolico (in rosso l'iperbole ottenuta rapportando la retta di regressione per i tempi delle due schede video), per problemi piccoli si ha infatti che il rapporto tra il tempo della RTX2070 e della MX250 risulta essere molto basso, ovvero nel caso del problema di dimensione $256\times 256$ di `r round(ratio_256x256, digits = 2)` (basso perché sembrerebbe che la 2070 super sia solo `r round(ratio_256x256, digits = 2)`x migliore della MX250), cresce però molto velocemente per poi stabilizzarsi intorno a `r round(ratio_8192x8192, digits = 2)` per problemi più grandi
+Si può notare dal secondo grafico come il rapporto tra tempo medio tra le due schede tende ad aumentare seguendo un andamento iperbolico (in rosso l'iperbole ottenuta rapportando la retta di regressione per i tempi delle due schede video), per problemi piccoli si ha infatti che il rapporto tra il tempo della RTX2070 e della MX250 risulta essere molto basso, ovvero nel caso del problema di dimensione $256\times 256$ di `r round(ratio_256x256, digits = 2)` (basso perché sembrerebbe che la 2070 super sia solo `r round(ratio_256x256, digits = 2)`x migliore della MX250), cresce però molto velocemente per poi stabilizzarsi intorno a `r round(ratio_8192x8192, digits = 2)` per problemi più grandi
 
 Si può concludere che la nostra soluzione permetta di sfruttare al meglio le schede con caratteristiche hardware migliori solo per problemi sufficientemente grandi, per problemi piccoli invece i dati mostrano un miglioramento non eccessivamente elevato.
 
@@ -920,7 +924,7 @@ lines(dta_B, col = "green")
 par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
 
 plot(0, 0, type = 'l', bty = 'n', xaxt = 'n', yaxt = 'n')
-legend("bottom", c("mx250", "rtx 2070 super"), col = c("black", "green"), lwd = 5, xpd = TRUE, horiz = TRUE, cex = 1, seg.len=1, bty = 'n')
+legend("bottom", c("MX250", "RTX2070 Super"), col = c("black", "green"), lwd = 5, xpd = TRUE, horiz = TRUE, cex = 1, seg.len=1, bty = 'n')
 ```
 
 Attraverso questi grafici si può notare come il tempo per la il ***ciclo di solve*** sia distribuito per le due schede video, si nota ovviamente una distribuzione di tempi inferiori per la RTX2070 Super rispetto alla MX250.
@@ -930,3 +934,21 @@ Si può notare anche un comportamento anomalo nella distribuzione dei tempi, inf
 La causa sembra essere dovuta ad una variazione del tempo di esecuzione del kernel di aggiornamento del tableau ma il motivo di tale variazione non è stato possibile da individuare.
 
 # Conclusioni
+I risultati ottenuti sono in linea con quanto previsto in fase di progettazione ed analisi.
+
+Pur non essendoci stato un miglioramento dal punto di vista della complessità teorica del ciclo di solve (che rimane lineare sul numero totale di elementi del tableau), tuttavia l'implementazione ha mostrato un'ottima scalabilità sia da punto di vista delle dimensioni dei problemi sia dal punto di vista dell'hardware che esegue l'algoritmo, in quanto lo speedup ottenuto tra una scheda di fascia bassa (MX250) e una di fascia medio-alta (RTX2070 Super) è consistente e si riflette anche sul tempo totale ad eseguire i problemi.
+
+A conclusione si vuole far notare come questa implementazione abbia alcune criticità:
+
+- non è completa (non gestisce i problemi degeneri e in caso di soluzioni multiple non è in grado di ritornarle tutte, ma soltanto una),
+
+- accetta in input solo problemi in forma canonica,
+
+- in generale il metodo del tableau per risolvere problemi di ottimizzazione lineare non è il più efficiente (nei solver commerciali come GLPK e CPLEX si utilizzano altri metodi).
+
+# Fonti utilizzate
+
+1. Corso di Ricerca Operativa del prof.Shun-Chen Niu dell'Università del Texas a Dallas (capitoli 2.3 e 2.4)\
+[https://personal.utdallas.edu/~scniu/OPRE-6201/OPRE-6201_Course-Content.html](https://personal.utdallas.edu/~scniu/OPRE-6201/OPRE-6201_Course-Content.html)
+
+2. COUTINHO, Demetrios, et al. A Scalable Shared-Memory Parallel Simplex for Large-Scale Linear Programming. arXiv preprint arXiv:1804.04737, 2018.
