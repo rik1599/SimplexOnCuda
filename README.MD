@@ -20,7 +20,13 @@ Su Linux/MacOS
 Si trova [qui](./relazione/relazione.pdf)
 
 ## Dataset delle istanze
-Le istanze usate per i test si trovano [qui](./data/examples/)
+Le istanze usate per i test si trovano [qui](./data/examples/benchmark_problems)
+
+Per eseguire una istanza tra quelle utilizzate per i benchmark utilizzare i seguenti comandi:
+```
+cd debug
+./SimplexOnCuda -rf ./../data/examples/benchmark_problems/<nome_file>
+```
 
 ## Dataset dei tempi di esecuzioni
 I risultati dei tempi di esecuzione si trovano [qui](./data/measures/)
