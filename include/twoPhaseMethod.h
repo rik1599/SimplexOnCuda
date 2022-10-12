@@ -17,3 +17,8 @@
  * @return -1 se il problema non ha soluzione, -2 se è unbounded, -3 se il problema è degenere, 0 se ha una soluzione
  */
 int twoPhaseMethod(problem_t* problem, TYPE* solution, TYPE* optimalValue);
+
+#ifdef TIMER
+    void enableBenchmarkMode();
+    void disableBenchmarkMode();
+#endif
