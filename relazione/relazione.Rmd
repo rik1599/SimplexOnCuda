@@ -191,7 +191,7 @@ $T[1..m][n+m..n+2m-1] \gets I$ \tcc*[r]{variabili artificiali}
 \For{$i\gets 1\ \text{to}\ m$}{
   \If{$T[i][n+2m] < 0$}{
     \For{$j\gets 0\ \text{to}\ n+2m$}{
-      $T[i][j] = -T[i][j]$\; 
+      $T[i][j] \gets -T[i][j]$\; 
     }
   }
 }
@@ -378,16 +378,16 @@ Per lo schema di parallelizzazione è stato utilizzato lo schema visto a lezione
 
 Per quanto riguarda la grid si è visto che per una matrice di $8192 \times 8192$ elementi e dati dei blocchi da $32\times 32$ thread, dal punto di vista delle prestazioni la grid migliore è risultata essere quella da $16\times 16$ blocchi.
 
-Prendendo in considerazione che per una matrice da $32 \times 32$ elementi il pattern migliore è quello che ad ogni thread assegna un valore, per calcolare il numero di blocchi necessari data una dimensione della matrice è stata calcolata una retta tra i punti $(1,32)$ e $(8192,16)$ ottenendo così l'equazione $$ y = \left\lceil \frac{x+512}{544} \right \rceil $$
+Prendendo in considerazione che per una matrice da $32 \times 32$ elementi il pattern migliore è quello che ad ogni thread assegna un valore, per calcolare il numero di blocchi necessari data una dimensione della matrice è stata calcolata una retta tra i punti $(1,32)$ e $(8192,16)$ ottenendo così l'equazione $$ blocks = \left\lceil \frac{dim+512}{544} \right \rceil $$
 
-
+Siccome oltre alla matrice dei vincoli va aggiornato anche il vettore dei costi si è scelto anche qui di svolgere queste operazioni in parallelo utilizzando due CUDA Stream differenti. 
 
 #### Considerazioni sulle operazioni in virgola mobile
 Considerato che l'algoritmo del simplesso utilizza numeri in virgola mobile, particolare enfasi va messa sull'arrotondamento dei numeri reali e sul fare meno operazioni possibili per evitare di propagare gli errori.
 
 Inoltre per fare i confronti tra numeri non è possibile utilizzare le classiche espressioni logiche (in virgola mobile due numeri sono considerati uguali se la loro differenza in valore assoluto è minore di un valore $\epsilon$ "piccolo"), questa fattispecie è stata implementata dalla funzione *compare* di macro.h, utilizzando come valore di $\epsilon = 10^{-9}$.
 
-Per quanto riguarda l'aggiornamento del tableau, per effettuare il calcolo $T[i][j] - \frac{C_p[i]}{p}R_p[j]$ viene utilizzata la funzione *fma* della libreria math di CUDA\footnote{Questa funzione riduce calcoli del tipo $A*B+C$ in una sola operazione in virgola mobile}. Il calcolo viene così ridotto a due operazioni in virgola mobile (divisione e fma) invece che tre.
+Per quanto riguarda l'aggiornamento del tableau, per effettuare il calcolo $T[i][j] - \frac{C_p[i]}{p}R_p[j]$ viene utilizzata la funzione *fma* della libreria math di CUDA\footnote{Questa funzione calcola $A*B+C$ in una sola operazione in virgola mobile}. Il calcolo viene così ridotto a due operazioni in virgola mobile (divisione e fma) invece che tre.
 
 ### Estrazione della soluzione (Algoritmo \ref{alg:simplex}, righe 25-29)
 Per ottenere la soluzione al problema si procede nel seguente modo:
@@ -583,7 +583,7 @@ Un ulteriore grafico interessante che mette ancora di più in evidenza questa ca
   phaseOneMean_ElemNumber$cells <- phaseOneMean_ElemNumber$constraints * phaseOneMean_ElemNumber$vars
   phaseTwoMean_ElemNumber$cells <- phaseTwoMean_ElemNumber$constraints * phaseTwoMean_ElemNumber$vars
   
-  par(mfrow=c(1,2))
+  par(mfrow=c(1,2), oma = c(3, 0, 0, 0))
   
   #######################
   
@@ -591,32 +591,40 @@ Un ulteriore grafico interessante che mette ancora di più in evidenza questa ca
   values <- c("256", "512", "1024", "2048", "4096", "8192")
   colors <- c("orange", "red", "purple", "black","blue", "green")
 
-  plot(data = phaseOneMean_ElemNumber, log(values)~log(cells), main = "Fase 1, scala logaritmica", xlab = "Dim. problema (n°vars*n°constr.)", ylab = "Tempo medio solve", type = 'n')
+  plot(data = phaseOneMean_ElemNumber, log(values)~log(cells), main = "Fase 1, scala logaritmica", xlab = "Dim. problema (n°vars*n°constr.)", ylab = "Tempo medio ciclo di solve (µs)", type = 'n')
 
   i<-1;
   for(value in values){
     value
     toPrint <- subset(phaseOneMean_ElemNumber, constraints == value)
     points(log(toPrint$cells), log(toPrint$values), col = colors[i])
+    lines(log(toPrint$cells), log(toPrint$values), col = colors[i])
     i=i+1
   }
 
-    plot(data = phaseTwoMean_ElemNumber, log(values)~log(cells), main = "Fase 2, scala logaritmica", xlab = "Dim. problema (n°vars*n°constr.)", ylab = "Tempo medio solve", type = 'n')
+    plot(data = phaseTwoMean_ElemNumber, log(values)~log(cells), main = "Fase 2, scala logaritmica", xlab = "Dim. problema (n°vars*n°constr.)", ylab = "Tempo medio ciclo di solve (µs)", type = 'n')
   
   i<-1;
   for(value in values){
     value
     toPrint <- subset(phaseTwoMean_ElemNumber, constraints == value)
     points(log(toPrint$cells), log(toPrint$values), col=colors[i])
+    lines(log(toPrint$cells), log(toPrint$values), col = colors[i])
     i=i+1
   }
   
-  par(mfrow=c(1,1))
+  par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
+  plot(0, 0, type = 'l', bty = 'n', xaxt = 'n', yaxt = 'n')
+  legend("bottom", col = colors, legend = values, title = "Numero di vincoli del problema", 
+         lwd = 5, xpd = TRUE, horiz = TRUE, cex = 1, seg.len=1, bty = 'l')
+  
 ```
-Nelle ascisse si trova la dimensione del problema, intesa come n°variabili * n°vincoli (scalata logaritmicamente), mentre nelle ordinate si trova il tempo medio per ciclo di solve speso per tale problema.
+
+Nelle ascisse si trova la dimensione del problema, intesa come $n^{\circ}variabili \times n^{\circ}vincoli$, mentre nelle ordinate si trova il tempo medio per ciclo di solve per tale problema. Entrambe le dimensioni sono in scala logaritmica.
+
 Nel grafico problemi con lo stesso numero di vincoli hanno lo stesso colore ed è possibile notare come a stessa dimensione (stesso valore sulle ascisse) corrispondono tempi medi molto diversi tra di loro rappresentati con colore diverso, possiamo quindi dedurre ancora una volta come il numero di variabili ed il numero di vincoli abbiano un peso diverso nel tempo necessario al ***ciclo di solve***.
 
-Per concludere inoltre possiamo anche affermare che il tempo medio non dipende dalla dimensione del problema calcolata come n°variabili * n°vincoli ma da un'altra dimensione, che vedremo in seguito essere quella del tableau.
+Per concludere inoltre possiamo anche affermare che il tempo medio non dipende dalla dimensione del problema calcolata come $n^{\circ}variabili \times n^{\circ}vincoli$ ma da un'altra dimensione, che vedremo in seguito essere quella del tableau.
 
 ### Analisi in funzione della dimensione reale
 
@@ -729,13 +737,11 @@ Se si mette in relazione il tempo medio per ***ciclo di solve*** con il numero d
 Si nota come il tempo medio necessario per ciclo di solve sembra cresce linearmente all'aumentare della dimensione effettiva del tableau.
 
 ## Confronti tra diverse gpu
-Questa sezione si analizzerà come l'algoritmo scala utilizzando 2 gpu, una mx 250 ed una RTX 2070super, che hanno diverse caratteristiche e performance, riportate nella seguente tabella:
+Questa sezione si analizzerà come l'algoritmo scala utilizzando 2 GPU, una MX250 (scheda di fascia bassa per notebook) ed una RTX2070 Super (scheda di fascia medio-alta), che hanno diverse caratteristiche e performance, riportate nella seguente tabella:
 
-<!-- Inserire qualche informazione in più sulle schede (Architettura, n° di stream multiprocessor, ecc...) -->
-
-
-|                           |   Mx250  | Rtx 2070super |
+|                           |   MX250  | RTX2070 Super |
 |:-------------------------:|:--------:|:-------------:|
+|        Anno               |  2019    |     2020      |
 |        Architettura       |  Pascal  |     Turing    |
 | Streaming Multiprocessors |     3    |       40      |
 |         Base clock        |  937 MHz |    1605 MHz   |
