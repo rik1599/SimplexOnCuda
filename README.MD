@@ -41,7 +41,7 @@ cd debug
 ./SimplexOnCuda -r <numero_variabili> <numero_vincoli> <eventuale_seed>
 ```
 Con l'opzione -rs viene anche salvato un file di testo con questi parametri.
-Questo file può essere utilizzato eseguendo con l'opzione -rf
+Questo file può essere utilizzato eseguendo SimplexOnCuda con l'opzione -rf e il path del file.
 
 Se invece si vuole fornire un problema specifico creare un file con questo formato
 ```
@@ -55,5 +55,5 @@ Se invece si vuole fornire un problema specifico creare un file con questo forma
 ed eseguire SimplexOnCuda con l'opzione -f e il path del file con il problema.
 
 ## Dataset dei tempi di esecuzioni
-I risultati dei tempi di esecuzione si trovano [qui](./data/measures/)
+I risultati dei tempi di esecuzione si trovano [qui](./data/measures/).
 
