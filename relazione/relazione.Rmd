@@ -3,7 +3,7 @@ title: "Esame di Programmazione su Architetture Parallele"
 subtitle: "Metodo del simplesso per la risoluzione della programmazione lineare"
 author:
   - "Belliato Riccardo\n(mat. 142652)"
-  - "Simone Tomada"
+  - "Simone Tomada\n(mat. 141965)"
 date: "`r Sys.Date()`"
 abstract: |
   In questa relazione si propone una implementazione del metodo del simplesso a due fasi 
@@ -47,7 +47,7 @@ In altre parole, si vogliono trovare dei valori per le componenti del vettore $x
 
 Questa classe di problemi permette di modellare un gran numero di situazioni reali in molteplici ambiti (ottimizzazione dei costi, creazione di orari, *etc.*), oltre che alcuni problemi NP-hard come il *Knapsack* o il *Vertex Cover*.
 
-Dal punto di vista dell'algebra lineare, un problema in $n$ varibili non è altro che uno spazio $\mathbb{R}^n$, la funzione obiettivo è una retta nello spazio, mentre i vincoli definiscono un *poliedro* nello spazio.
+Dal punto di vista dell'algebra lineare, un problema in $n$ variabili non è altro che uno spazio $\mathbb{R}^n$, la funzione obiettivo è una retta nello spazio, mentre i vincoli definiscono un *poliedro* nello spazio.
 
 Utilizzando i teoremi e le tecniche dell'algebra lineare è stato possibile creare degli algoritmi per risolvere i problemi di ottimizzazione, come il **simplesso**, i quali si prestano molto bene ad essere parallelizzati (in quanto operano su matrici).
 
@@ -68,7 +68,7 @@ Dato un problema di ottimizzazione, questo può essere di tre tipi:
 ## Forma canonica e forma standard
 
 I problemi di massimizzazione possono essere convertiti in problemi di minimizzazione (e viceversa), così come è possibile manipolare le singole disequazioni.
-Queste operazioni servono a riportare i problemi in una forma che permetta di utilizzarli da parte dei solver.
+Queste operazioni servono a riportare i problemi in una forma che permetta loro di essere utilizzati da parte dei solver.
 In particolare vengono utilizzate la forma *canonica* e la forma *standard*.
 
 Un problema (di massimizzazione) è in forma canonica se è nella forma
@@ -101,7 +101,7 @@ La forma standard è quella che viene utilizzata dagli algoritmi di soluzione.
 
 Il metodo del simplesso è un'algoritmo per risolvere i problemi di ottimizzazione lineari.
 
-Si basa sul teorema secondo il quale le soluzioni (dette *soluzioni di base*) di un qualsiasi problema in forma standard sono i *vertici* del poliedro costruito sui vincoli.
+Si basa sul teorema secondo il quale le soluzioni (dette *soluzioni di base*) di un qualsiasi problema in forma standard sono i *vertici* del poliedro costruito sulle rette rappresentate dai vincoli.
 
 Ogni vertice è individuato da una o più *soluzioni di base ammissibili*, cioè tutti i valori delle variabili in base sono maggiori o uguali a 0, mentre il valore delle altre variabili è 0.
 Se in base sono presenti uno o più valori uguali a 0, si dice che la base è *degenere*.
@@ -294,11 +294,11 @@ $(T,\mathcal{B}) \gets Simplex-Phase1(A, b)$\;
         In altre parole l'implementazione utilizza il tableau trasposto, ossia le colonne del tableau sono i vincoli del problema, mentre le righe sono le variabili.
         L'algoritmo, infatti, tende di più ad accedere ai vettori delle singole variabili che a quelli dei singoli vincoli.
         Per copiare singole colonne della matrice in vettori in global memory si è visto che l'approccio migliore (dal punto di vista del tempo necessario ad eseguire l'operazione) è quello di utilizzare comunque gli accessi strided, invece di altri pattern di accesso più efficienti dal punto di vista della bandwith utilizzata (Es. copiare un tile della matrice in shared memory e poi copiare la colonna desiderata dalla shared memory in global memory);
+        
+    -   il vettore dei costi non viene memorizzato nella matrice del tableau, ma in un vettore a parte e il valore della funzione obiettivo è nel primo elemento di questo vettore (analogalmente a quanto fatto con il vettore dei termini noti al punto successivo).
 
     -   il vettore dei termini noti non viene memorizzato in fondo al tableau, ma nella prima riga della matrice.
-        In questo modo nel passaggio dalla fase 1 alla fase 2 non è necessario spostare la colonna nella matrice, ma è sufficiente troncare il numero di righe senza dover intervenire sull'allocazione della memoria;
-
-    -   il vettore dei costi non viene memorizzato nella matrice del tableau, ma in un vettore a parte e il valore della funzione obiettivo è nel primo elemento di questo vettore (analogalmente a quanto fatto con il vettore dei termini noti al punto precedente).
+        In questo modo nel passaggio dalla fase 1 alla fase 2 non è necessario spostare la colonna (o, in questo caso, la riga) nella matrice, ma è sufficiente troncare le righe relative alle variabili artificiali da una variabile del programma in C senza dover intervenire sull'allocazione della memoria (stesso discorso vale anche per il vettore dei costi);
 
 ```{r memory, echo=FALSE, fig.cap="Schema di memorizzazione in memoria globale", out.width="50%", fig.align="center"}
 knitr::include_graphics("img/memory.png")
@@ -324,7 +324,7 @@ Per prima cosa si istanziano in global memory:
 -   il vettore della base di dimensione $m$ utilizzando *cudaHostAlloc* con il flag *cudaHostAllocMapped*
 
 Successivamente si procede a riempire questi vettori.
-Per fare ciò si utilizzano sei cudaStream differenti:
+Per fare ciò si utilizzano sei CUDA Stream differenti:
 
 1.  il primo stream imposta a 0 i primi $n+m+1$ valori del vettore dei costi a 0 con *cudaMemset*,
 
@@ -363,9 +363,9 @@ Nella seguente tabella sono riportati i tempi ottenuti per i due kernel (con con
 |:-----------------:|:---------------------:|:-----------------:|:---------------------:|
 |     209.23ms      |       52.142ms        |     38.720ms      |       50.610ms        |
 
-: Risultati sperimentali dei diversi kernel, con la configurazione di lancio ottimale (blocco: 32\*32, grid: (1, roof(24.588/32))) ed ottenuti con una scheda Geforce MX250
+: Risultati sperimentali dei diversi kernel, con la configurazione di lancio ottimale (blocco: $32\times 32$, grid: (1, $\lceil 24.588/32\rceil$)) ed ottenuti con una scheda Geforce MX250
 
-IL risultato peggiore ottenuto risulta essere quello con l'approccio naive e con cc \< 6.0, che impiega circa quattro volte tanto gli altri casi.
+Il risultato peggiore ottenuto risulta essere quello con l'approccio naive e con cc \< 6.0, che impiega circa quattro volte tanto gli altri casi.
 Per tale motivo in tale situazione conviene utilizzare l'approccio con riduzione.
 
 Nel caso di cc \>= 6.0 la situazione è diversa e quello più efficiente risulta essere quello che sfrutta l'approccio naive, grazie all'ottimizzazione dell'atomicAdd
@@ -387,7 +387,7 @@ Viene utilizzato lo schema di parallelizzazione visto a lezione per le riduzioni
 
 -   il numero di blocchi calcolato con la formula $\min((N + 512 - 1)/512, 1024)$, con $N$ dimensione del vettore,
 
--   ogni thread controlla più elementi del vettore utillizzando l'indirizzamento sequenziale.
+-   ogni thread controlla più elementi del vettore utilizzando l'indirizzamento sequenziale.
 
 ### Sostituzione vettore dei costi (Algoritmo \ref{alg:simplex-phase2}, righe 1-2)
 
@@ -453,8 +453,7 @@ Al fine di analizzare le prestazioni del solver è stato predisposta una funzion
 Il benchmark consiste nella risoluzione di una serie di problemi con dimensione crescente a partire da 256 variabili per 256 vincoli a 8192 variabili per 8192 vincoli.
 Il passo tra un problema e l'altro è esponenziale sulle potenze di due.
 
-Per i benchmark il generatore utilizza come seed la dimensione del problema, per cui si andranno a generare ogni volta gli stessi problemi.
-In questo modo è possibile rieseguire il benchmark su dispositivi diversi e poter confrontare le prestazioni.
+Utilizzando gli stessi seed per i generatori di numeri pseudo-casuali è stato possibilie rieseguire il benchmark su dispositivi diversi e poter confrontare le prestazioni (in quanto vengono generate le stesse istanze).
 
 ## Misurazione dei tempi
 
@@ -881,7 +880,7 @@ legend("topleft", c("MX250", "RTX2070 Super"), lty = c(1,1), col = c("black", "g
 ```
 
 Dal grafico è chiaro come il tempo necessario per ***ciclo di solve*** cresca diversamente per le due schede.
-Si può anche notare come la differenza di tempo speso per ***ciclo di solve*** aumenti all'aumentare della dimensione reale del problema.
+Si può anche notare come la differenza di tempo speso per ***ciclo di solve*** aumenti linearmente all'aumentare della dimensione reale del problema.
 
 ```{r, echo=FALSE}
 
@@ -1023,7 +1022,7 @@ plot(0, 0, type = 'l', bty = 'n', xaxt = 'n', yaxt = 'n')
 legend("bottom", c("MX250", "RTX2070 Super"), col = c("black", "green"), lwd = 5, xpd = TRUE, horiz = TRUE, cex = 1, seg.len=1, bty = 'n')
 ```
 
-Attraverso questi grafici si può notare come il tempo per la il ***ciclo di solve*** sia distribuito per le due schede video, si nota ovviamente una distribuzione di tempi inferiori per la RTX2070 Super rispetto alla MX250.
+Attraverso questi grafici si può notare come i tempi necessari per eseguire un ***ciclo di solve*** siano distribuiti per le due schede video. Si nota ovviamente una distribuzione di tempi inferiori per la RTX2070 Super rispetto alla MX250.
 
 Si può notare anche un comportamento anomalo nella distribuzione dei tempi, infatti invece che avere una distribuzione gaussiana attorno ad un unico valore medio si ottengono due picchi, questo avviene indipendentemente dalla dimensione del problema utilizzato e dalla scheda utilizzata.
 
@@ -1033,7 +1032,7 @@ La causa sembra essere dovuta ad una variazione del tempo di esecuzione del kern
 
 I risultati ottenuti sono in linea con quanto previsto in fase di progettazione ed analisi.
 
-Pur non essendoci stato un miglioramento dal punto di vista della complessità teorica del ciclo di solve (che rimane lineare sul numero totale di elementi del tableau), tuttavia l'implementazione ha mostrato un'ottima scalabilità sia da punto di vista delle dimensioni dei problemi sia dal punto di vista dell'hardware che esegue l'algoritmo, in quanto lo speedup ottenuto tra una scheda di fascia bassa (MX250) e una di fascia medio-alta (RTX2070 Super) è consistente e si riflette anche sul tempo totale ad eseguire i problemi.
+Pur non essendoci stato un miglioramento dal punto di vista della complessità teorica del ciclo di solve (che rimane lineare sul numero totale di elementi del tableau), l'implementazione ha mostrato un'ottima scalabilità sia da punto di vista delle dimensioni dei problemi sia dal punto di vista dell'hardware che esegue l'algoritmo, in quanto lo speedup ottenuto tra una scheda di fascia bassa (MX250) e una di fascia medio-alta (RTX2070 Super) è consistente e si riflette anche sul tempo totale ad eseguire i problemi.
 
 A conclusione si vuole far notare come questa implementazione abbia alcune criticità:
 
